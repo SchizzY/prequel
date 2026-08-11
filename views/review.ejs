@@ -1,0 +1,94 @@
+<!doctype html>
+<html
+  lang="en"
+  data-color-mode="<%= colorMode %>"
+  data-light-theme="light"
+  data-dark-theme="dark"
+  data-view="<%= view %>"
+  data-diff="<%= diffMode %>"
+  data-branch="<%= head %>"
+  data-comments-enabled="<%= commentsEnabled ? '1' : '0' %>"
+>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PR Review — <%= head %></title>
+  <!-- GitHub's exact design tokens; both files loaded so auto mode follows the OS -->
+  <link rel="stylesheet" href="/vendor/primer/functional/themes/light.css" />
+  <link rel="stylesheet" href="/vendor/primer/functional/themes/dark.css" />
+  <link rel="stylesheet" href="/static/css/diff.css" />
+</head>
+<body>
+  <header class="pr-subnav">
+    <div class="pr-subnav-inner">
+      <div class="pr-title-row">
+        <% if (treeHtml) { %>
+        <button class="tree-pane-toggle" title="Toggle file tree" aria-label="Toggle file tree">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25H5V1.5Zm4.75 0v13h7.75a.25.25 0 0 0 .25-.25V1.75a.25.25 0 0 0-.25-.25Z"></path></svg>
+        </button>
+        <% } %>
+        <h1 class="pr-title">Files changed</h1>
+        <span class="pr-refs">
+          <span class="ref-pill"><%= head %></span>
+          <span class="ref-arrow">into</span>
+          <span class="ref-pill"><%= base %></span>
+        </span>
+      </div>
+      <div class="pr-meta-row">
+        <span class="diff-summary">
+          <strong><%= summary.fileCount %></strong> changed
+          <%= summary.fileCount === 1 ? 'file' : 'files' %>
+          <span class="summary-additions">+<%= summary.additions %></span>
+          <span class="summary-deletions">−<%= summary.deletions %></span>
+        </span>
+        <span class="pr-meta-right">
+          <% if (commentsEnabled) { %>
+          <button id="export-btn" class="export-btn" hidden>Export for Claude</button>
+          <button id="clear-btn" class="clear-btn" hidden>Clear</button>
+          <% } %>
+          <% if (isRepo) { %>
+          <span class="seg-toggle" role="group" aria-label="Changes to show">
+            <a class="seg-btn<%= diffMode === 'all' ? ' is-active' : '' %>"
+               href="?diff=all" data-param="diff" data-value="all" title="Branch commits + uncommitted + untracked">All</a>
+            <a class="seg-btn<%= diffMode === 'branch' ? ' is-active' : '' %>"
+               href="?diff=branch" data-param="diff" data-value="branch" title="Committed changes on this branch vs base">Branch</a>
+            <a class="seg-btn<%= diffMode === 'working' ? ' is-active' : '' %>"
+               href="?diff=working" data-param="diff" data-value="working" title="Uncommitted + untracked changes">Working</a>
+          </span>
+          <% } %>
+          <span class="seg-toggle view-toggle" role="group" aria-label="Diff view">
+            <a class="seg-btn<%= view === 'unified' ? ' is-active' : '' %>"
+               href="?view=unified" data-param="view" data-value="unified">Unified</a>
+            <a class="seg-btn<%= view === 'split' ? ' is-active' : '' %>"
+               href="?view=split" data-param="view" data-value="split">Split</a>
+          </span>
+          <span class="repo-path" title="<%= repoPath %>"><%= repoPath %></span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <div class="review-layout">
+    <% if (treeHtml) { %>
+    <aside class="file-tree-pane" aria-label="Changed files">
+      <div class="tree-header">Files changed</div>
+      <nav class="file-tree"><%- treeHtml %></nav>
+    </aside>
+    <div class="tree-resizer" role="separator" aria-orientation="vertical" aria-label="Resize file pane" title="Drag to resize"></div>
+    <% } %>
+    <main class="diff-container">
+      <% if (error) { %>
+        <div class="notice notice-error">Could not read git diff: <%= error %></div>
+      <% } else if (!isRepo) { %>
+        <div class="notice notice-info">Not a git repository — showing a built-in sample diff. Launch <code>prequel</code> from inside a repo to review real changes.</div>
+      <% } %>
+      <%- filesHtml %>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/static/js/review.js"></script>
+  <script src="/static/js/comments.js"></script>
+</body>
+</html>

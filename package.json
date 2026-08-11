@@ -1,0 +1,22 @@
+{
+  "name": "prequel",
+  "version": "0.0.0",
+  "description": "Review it before it's a pull request — a local, GitHub-style diff reviewer",
+  "type": "module",
+  "bin": {
+    "prequel": "bin/prequel.js"
+  },
+  "scripts": {
+    "start": "node bin/prequel.js",
+    "dev": "node bin/prequel.js"
+  },
+  "dependencies": {
+    "@primer/primitives": "^10.5.0",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "g": "^2.0.1",
+    "marked": "^12.0.2",
+    "open": "^10.1.0",
+    "shiki": "^1.29.2"
+  }
+}

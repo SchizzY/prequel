@@ -1,0 +1,1038 @@
+/* GitHub "Files changed" clone. Colors come entirely from Primer primitives
+   design tokens (--bgColor-*, --fgColor-*, --diffBlob-*, --borderColor-*) so
+   light/dark parity matches GitHub for free. */
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  /* Height of the sticky subnav; used to offset sticky file headers, the tree
+     pane, and scroll anchors. Kept in sync with the subnav's rendered height. */
+  --subnav-h: 62px;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bgColor-default, #ffffff);
+  color: var(--fgColor-default, #1f2328);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+    Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ---- Subnav / PR header ------------------------------------------------ */
+.pr-subnav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background-color: var(--bgColor-default, #fff);
+  border-bottom: 1px solid var(--borderColor-default, #d1d9e0);
+}
+
+.pr-subnav-inner {
+  margin: 0 auto;
+  padding: 12px 16px;
+}
+
+.pr-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pr-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.pr-refs {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.ref-pill {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  background-color: var(--bgColor-accent-muted, #ddf4ff);
+  color: var(--fgColor-accent, #0969da);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.ref-arrow {
+  color: var(--fgColor-muted, #59636e);
+}
+
+.pr-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.summary-additions,
+.file-additions {
+  color: var(--fgColor-success, #1a7f37);
+  font-weight: 600;
+}
+
+.summary-deletions,
+.file-deletions {
+  color: var(--fgColor-danger, #d1242f);
+  font-weight: 600;
+}
+
+.pr-meta-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.repo-path {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40vw;
+}
+
+/* Segmented toggles (Unified/Split, All/Branch/Working) */
+.seg-toggle {
+  display: inline-flex;
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 6px;
+  overflow: hidden;
+  flex: none;
+}
+
+.seg-btn {
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--fgColor-muted, #59636e);
+  text-decoration: none;
+  cursor: pointer;
+  background-color: var(--bgColor-default, #fff);
+  user-select: none;
+}
+
+.seg-btn:hover {
+  background-color: var(--bgColor-muted, #f6f8fa);
+}
+
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--borderColor-default, #d1d9e0);
+}
+
+.seg-btn.is-active {
+  background-color: var(--bgColor-accent-emphasis, #0969da);
+  color: var(--fgColor-onEmphasis, #fff);
+}
+
+.seg-btn.is-active:hover {
+  background-color: var(--bgColor-accent-emphasis, #0969da);
+}
+
+/* Export-for-Claude button (subnav) */
+.export-btn {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 12px;
+  line-height: 20px;
+  border-radius: 6px;
+  border: 1px solid var(--button-primary-borderColor-rest, rgba(31, 136, 61, 0.4));
+  color: var(--fgColor-onEmphasis, #fff);
+  background-color: var(--button-primary-bgColor-rest, #1f883d);
+  cursor: pointer;
+}
+.export-btn:hover {
+  background-color: var(--button-primary-bgColor-hover, #1a7f37);
+}
+.export-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Clear-comments button (subnav) */
+.clear-btn {
+  flex: none;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 12px;
+  line-height: 20px;
+  border-radius: 6px;
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  color: var(--fgColor-default, #1f2328);
+  background-color: var(--bgColor-default, #fff);
+  cursor: pointer;
+}
+.clear-btn:hover {
+  background-color: var(--bgColor-muted, #f6f8fa);
+}
+.clear-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Transient toast (bottom center) */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 90vw;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--fgColor-onEmphasis, #fff);
+  background-color: var(--bgColor-emphasis, #24292f);
+  border-radius: 6px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
+}
+.toast[hidden] {
+  display: none; /* our display:inline-flex would otherwise defeat [hidden] */
+}
+.toast > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toast-action {
+  flex: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--fgColor-onEmphasis, #fff);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Notices (sample fallback / git error) */
+.notice {
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.notice code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background-color: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+}
+
+.notice-info {
+  color: var(--fgColor-default, #1f2328);
+  border-color: var(--borderColor-accent-muted, #54aeff66);
+  background-color: var(--bgColor-accent-muted, #ddf4ff);
+}
+
+.notice-error {
+  color: var(--fgColor-default, #1f2328);
+  border-color: var(--borderColor-danger-muted, #ff818266);
+  background-color: var(--bgColor-danger-muted, #ffebe9);
+}
+
+/* ---- Diff container ---------------------------------------------------- */
+/* Two-column layout: sticky file-tree sidebar + diff body. Default align-items
+   (stretch) lets the diff column fill the full layout height so its left border
+   (the column divider) runs to the bottom of the page. */
+.review-layout {
+  display: flex;
+}
+
+.diff-container {
+  flex: 1 1 auto;
+  min-width: 0; /* allow the column to shrink so wide tables wrap, not overflow */
+  margin: 16px 0;
+  padding: 0 16px;
+}
+
+/* Draggable divider between the file pane and the diff. It spans the full
+   layout height (grabbable at any scroll position) and carries the column line;
+   dragging it updates --tree-w (persisted). */
+.tree-resizer {
+  flex: none;
+  position: relative;
+  width: 7px;
+  cursor: col-resize;
+  align-self: stretch;
+}
+.tree-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background-color: var(--borderColor-default, #d1d9e0);
+}
+.tree-resizer:hover::before,
+.tree-resizer.is-dragging::before {
+  left: 2px;
+  width: 3px;
+  background-color: var(--fgColor-accent, #0969da);
+}
+
+.review-layout.tree-hidden .tree-resizer {
+  display: none;
+}
+
+/* anchor targets scroll clear of the sticky subnav */
+.file {
+  scroll-margin-top: calc(var(--subnav-h, 62px) + 8px);
+}
+
+/* ---- file tree sidebar ------------------------------------------------- */
+.file-tree-pane {
+  position: sticky;
+  top: var(--subnav-h, 62px);
+  align-self: flex-start;
+  flex: none;
+  width: var(--tree-w, 300px);
+  max-height: calc(100vh - var(--subnav-h, 62px));
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.review-layout.tree-hidden .file-tree-pane {
+  display: none;
+}
+
+.tree-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fgColor-muted, #59636e);
+  padding: 4px 8px 8px;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding-right: 8px;
+  font-size: 12px;
+  color: var(--fgColor-default, #1f2328);
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tree-row:hover {
+  background-color: var(--bgColor-muted, #f6f8fa);
+}
+
+.tree-chevron {
+  fill: var(--fgColor-muted, #59636e);
+  flex: none;
+  transition: transform 0.1s ease-in-out;
+}
+
+.tree-dir.is-collapsed > .tree-dir-row .tree-chevron {
+  transform: rotate(-90deg);
+}
+
+.tree-dir.is-collapsed > .tree-children {
+  display: none;
+}
+
+.tree-folder-icon {
+  fill: var(--fgColor-muted, #59636e);
+  flex: none;
+}
+
+.tree-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.tree-status-added {
+  background-color: var(--fgColor-success, #1a7f37);
+}
+
+.tree-status-modified {
+  background-color: var(--fgColor-attention, #9a6700);
+}
+
+.tree-status-removed {
+  background-color: var(--fgColor-danger, #d1242f);
+}
+
+.tree-status-renamed,
+.tree-status-copied {
+  background-color: var(--fgColor-accent, #0969da);
+}
+
+.tree-counts {
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tree-add {
+  color: var(--fgColor-success, #1a7f37);
+}
+
+.tree-del {
+  color: var(--fgColor-danger, #d1242f);
+}
+
+.tree-check {
+  display: none;
+  flex: none;
+  color: var(--fgColor-success, #1a7f37);
+}
+
+.tree-check svg {
+  fill: currentColor;
+}
+
+.tree-file-row.is-viewed .tree-name {
+  color: var(--fgColor-muted, #59636e);
+  text-decoration: line-through;
+}
+
+.tree-file-row.is-viewed .tree-counts {
+  display: none;
+}
+
+.tree-file-row.is-viewed .tree-check {
+  display: inline-flex;
+}
+
+.tree-file-row.is-active {
+  background-color: var(--bgColor-accent-muted, #ddf4ff);
+}
+
+/* file-tree toggle button in the subnav */
+.tree-pane-toggle {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  padding: 4px;
+  border-radius: 6px;
+  color: var(--fgColor-muted, #59636e);
+  cursor: pointer;
+}
+
+.tree-pane-toggle:hover {
+  background-color: var(--bgColor-muted, #f6f8fa);
+  color: var(--fgColor-default, #1f2328);
+}
+
+.tree-pane-toggle svg {
+  fill: currentColor;
+}
+
+/* ---- Per-file block ---------------------------------------------------- */
+.file {
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 6px;
+  margin-bottom: 16px;
+  background-color: var(--bgColor-default, #fff);
+}
+
+.file-header {
+  position: sticky;
+  top: var(--subnav-h, 62px);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: var(--bgColor-muted, #f6f8fa);
+  border-bottom: 1px solid var(--borderColor-default, #d1d9e0);
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  font-size: 12px;
+}
+
+.file.is-collapsed .file-header {
+  border-bottom: none;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.file.is-collapsed .file-body {
+  display: none;
+}
+
+.collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--fgColor-muted, #59636e);
+  border-radius: 4px;
+}
+
+.collapse-btn:hover {
+  background-color: var(--control-transparent-bgColor-hover, rgba(0, 0, 0, 0.06));
+}
+
+.collapse-btn .chevron {
+  fill: currentColor;
+  transition: transform 0.1s ease-in-out;
+}
+
+.file.is-collapsed .collapse-btn .chevron {
+  transform: rotate(-90deg);
+}
+
+/* diffstat squares */
+.diffstat {
+  display: inline-flex;
+  gap: 1px;
+  align-items: center;
+}
+
+.diffstat-block {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  display: inline-block;
+}
+
+.diffstat-block-add {
+  background-color: var(--fgColor-success, #1a7f37);
+}
+
+.diffstat-block-del {
+  background-color: var(--fgColor-danger, #d1242f);
+}
+
+.diffstat-block-neutral {
+  background-color: var(--borderColor-default, #d1d9e0);
+}
+
+.file-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.file-path {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-weight: 600;
+  color: var(--fgColor-default, #1f2328);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-rename {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.copy-path {
+  display: inline-flex;
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--fgColor-muted, #59636e);
+  border-radius: 4px;
+}
+
+.copy-path:hover {
+  color: var(--fgColor-accent, #0969da);
+  background-color: var(--control-transparent-bgColor-hover, rgba(0, 0, 0, 0.06));
+}
+
+.copy-path svg {
+  fill: currentColor;
+}
+
+.file-status-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 2em;
+  border: 1px solid transparent;
+  text-transform: none;
+}
+
+.file-status-added {
+  color: var(--fgColor-success, #1a7f37);
+  border-color: var(--borderColor-success-muted, #4ac26b66);
+  background-color: var(--bgColor-success-muted, #dafbe1);
+}
+
+.file-status-renamed,
+.file-status-copied {
+  color: var(--fgColor-accent, #0969da);
+  border-color: var(--borderColor-accent-muted, #54aeff66);
+  background-color: var(--bgColor-accent-muted, #ddf4ff);
+}
+
+.file-status-removed {
+  color: var(--fgColor-danger, #d1242f);
+  border-color: var(--borderColor-danger-muted, #ff818266);
+  background-color: var(--bgColor-danger-muted, #ffebe9);
+}
+
+.viewed-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--fgColor-muted, #59636e);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* ---- Diff table -------------------------------------------------------- */
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 20px;
+  tab-size: 8;
+}
+
+.diff-table .col-num {
+  width: 50px;
+}
+
+.diff-table .col-code {
+  width: auto;
+}
+
+/* NB: don't set `padding` here — `.diff-table td` (specificity 0,1,1) would
+   override the per-cell padding on `.blob-num`/`.blob-code` (0,1,0), collapsing
+   the gutter and letting the +/- marker overlap the code. Each cell type sets
+   its own padding below. */
+.diff-table td {
+  vertical-align: top;
+}
+
+/* line-number gutter cells. Fixed width so empty gutters (pure add/del rows)
+   don't collapse — otherwise the absolutely-positioned +/- marker shifts. */
+.blob-num {
+  width: 50px;
+  min-width: 50px;
+  padding: 0 12px;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--fgColor-muted, #59636e);
+  cursor: pointer;
+  user-select: none;
+  vertical-align: top;
+}
+
+.blob-num::before {
+  content: attr(data-line-number);
+}
+
+.blob-num-context {
+  background-color: var(--bgColor-default, #fff);
+}
+
+.blob-num-addition {
+  background-color: var(--diffBlob-additionNum-bgColor, #d1f8d9);
+  color: var(--diffBlob-additionNum-fgColor, #1f2328);
+}
+
+.blob-num-deletion {
+  background-color: var(--diffBlob-deletionNum-bgColor, #ffcecb);
+  color: var(--diffBlob-deletionNum-fgColor, #1f2328);
+}
+
+/* code cells. Extra left padding keeps the code clear of the line-number
+   gutter; the +/- marker sits in that padding. */
+.blob-code {
+  position: relative;
+  padding: 0 10px 0 28px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  vertical-align: top;
+}
+
+.blob-code-inner {
+  display: inline;
+}
+
+/* Shiki tokens carry a light color inline plus a --shiki-dark custom property.
+   Swap to the dark var whenever the page is in dark mode — mirroring the same
+   data-color-mode + prefers-color-scheme logic Primer's tokens use. */
+[data-color-mode="dark"] .tok {
+  color: var(--shiki-dark) !important;
+}
+@media (prefers-color-scheme: dark) {
+  [data-color-mode="auto"] .tok {
+    color: var(--shiki-dark) !important;
+  }
+}
+
+.marker {
+  position: absolute;
+  left: 12px;
+  user-select: none;
+}
+
+.blob-code-context {
+  background-color: var(--bgColor-default, #fff);
+}
+
+.blob-code-addition {
+  background-color: var(--diffBlob-additionLine-bgColor, #e6ffec);
+}
+
+.blob-code-addition .marker {
+  color: var(--diffBlob-additionLine-fgColor, #1a7f37);
+}
+
+.blob-code-deletion {
+  background-color: var(--diffBlob-deletionLine-bgColor, #ffebe9);
+}
+
+.blob-code-deletion .marker {
+  color: var(--diffBlob-deletionLine-fgColor, #d1242f);
+}
+
+/* word-level (intra-line) diff highlight: darker background on changed chars */
+.blob-code-addition .wd {
+  background-color: var(--diffBlob-additionWord-bgColor, #abf2bc);
+  border-radius: 2px;
+}
+
+.blob-code-deletion .wd {
+  background-color: var(--diffBlob-deletionWord-bgColor, #ffb1af);
+  border-radius: 2px;
+}
+
+/* hunk header rows */
+.hunk-header-row .blob-num-hunk {
+  background-color: var(--diffBlob-hunkNum-bgColor-rest, #ddf4ff);
+  min-width: 50px;
+}
+
+.blob-code-hunk {
+  background-color: var(--diffBlob-hunkLine-bgColor, #ddf4ff);
+  color: var(--diffBlob-hunkLine-fgColor, #59636e);
+  padding: 0 10px;
+}
+
+/* hunk-header gutter expander (load surrounding context) */
+.blob-num-expand {
+  padding: 0;
+  text-align: center;
+}
+
+.expander {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 20px;
+  border: 0;
+  background: transparent;
+  color: var(--diffBlob-expander-iconColor, var(--fgColor-accent, #0969da));
+  cursor: pointer;
+  padding: 0;
+}
+
+.expander:hover {
+  background-color: var(--diffBlob-hunkNum-bgColor-hover, var(--bgColor-accent-emphasis, #0969da));
+  color: var(--fgColor-onEmphasis, #fff);
+}
+
+.expander svg {
+  fill: currentColor;
+}
+
+/* empty cells in split view (a side with no corresponding line) */
+.blob-num-empty {
+  background-color: var(--diffBlob-emptyNum-bgColor, #f6f8fa);
+}
+
+.blob-code-empty {
+  background-color: var(--diffBlob-emptyLine-bgColor, #f6f8fa);
+}
+
+/* ---- split (side-by-side) view ---------------------------------------- */
+/* The two code columns share the remaining width equally under fixed layout.
+   A subtle divider separates the old (left) pane from the new (right) pane
+   (cell 3 is the start of the right pane on data rows). */
+.diff-table-split tr > td:nth-child(3) {
+  border-left: 1px solid var(--borderColor-muted, #d1d9e0);
+}
+
+/* ---- review comments --------------------------------------------------- */
+.commentable {
+  position: relative;
+}
+
+/* the hover "+" in the gutter (shown only when commenting is enabled) */
+.add-comment {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  right: 2px;
+  width: 18px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background-color: var(--bgColor-accent-emphasis, #0969da);
+  color: var(--fgColor-onEmphasis, #fff);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.add-comment:hover {
+  background-color: var(--button-primary-bgColor-hover, #0860ca);
+}
+
+[data-comments-enabled='1'] .diff-table tr:hover .commentable .add-comment {
+  display: inline-flex;
+}
+[data-comments-enabled='1'] .diff-table tr:hover .commentable::before {
+  visibility: hidden; /* hide the number while the + overlays the gutter */
+}
+
+/* comment thread + compose rows (full-width, injected after a line) */
+.comment-cell {
+  padding: 8px 16px;
+  background-color: var(--bgColor-muted, #f6f8fa);
+  border-top: 1px solid var(--borderColor-default, #d1d9e0);
+  white-space: normal;
+}
+
+/* the opposite side of a split-view comment: keep the separator line but no
+   comment band, so the thread reads as belonging to the side it was made on */
+.comment-cell-empty {
+  border-top: 1px solid var(--borderColor-default, #d1d9e0);
+  background-color: var(--bgColor-default, #fff);
+}
+
+/* continue the pane divider through split comment rows (each cell is colspan 2,
+   so the divider sits on the 2nd cell's left edge) */
+.diff-table-split .comment-row > td:nth-child(2) {
+  border-left: 1px solid var(--borderColor-muted, #d1d9e0);
+}
+
+.comment,
+.comment-compose {
+  max-width: 900px;
+}
+
+.comment {
+  background-color: var(--bgColor-default, #fff);
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 6px;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-size: 12px;
+  background-color: var(--bgColor-muted, #f6f8fa);
+  border-bottom: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 6px 6px 0 0;
+}
+
+.comment-time {
+  color: var(--fgColor-muted, #59636e);
+}
+
+.comment-lines {
+  margin-right: auto;
+  font-weight: 600;
+  color: var(--fgColor-muted, #59636e);
+}
+
+/* selected line range while composing / dragging */
+.mq-range-line {
+  background-color: rgba(84, 174, 255, 0.22) !important;
+}
+
+.comment-delete {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+  cursor: pointer;
+}
+.comment-delete:hover {
+  color: var(--fgColor-danger, #d1242f);
+}
+
+.comment-body {
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fgColor-default, #1f2328);
+}
+.comment-body > :first-child {
+  margin-top: 0;
+}
+.comment-body > :last-child {
+  margin-bottom: 0;
+}
+.comment-body p {
+  margin: 0 0 8px;
+}
+.comment-body code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 85%;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background-color: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+}
+.comment-body pre {
+  padding: 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+  background-color: var(--bgColor-muted, #f6f8fa);
+}
+.comment-body pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.comment-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 68px;
+  padding: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--fgColor-default, #1f2328);
+  background-color: var(--bgColor-default, #fff);
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 6px;
+  resize: vertical;
+}
+.comment-input:focus {
+  outline: none;
+  border-color: var(--fgColor-accent, #0969da);
+  box-shadow: 0 0 0 1px var(--fgColor-accent, #0969da);
+}
+
+.comment-compose-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  background-color: var(--bgColor-default, #fff);
+  color: var(--fgColor-default, #1f2328);
+  cursor: pointer;
+}
+.btn:hover {
+  background-color: var(--bgColor-muted, #f6f8fa);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.btn-primary {
+  color: var(--fgColor-onEmphasis, #fff);
+  background-color: var(--button-primary-bgColor-rest, #1f883d);
+  border-color: var(--button-primary-borderColor-rest, rgba(31, 136, 61, 0.4));
+}
+.btn-primary:hover {
+  background-color: var(--button-primary-bgColor-hover, #1a7f37);
+}
+
+/* file-level comment button (in the file header) */
+.add-file-comment {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  border-radius: 4px;
+  color: var(--fgColor-muted, #59636e);
+  cursor: pointer;
+}
+.add-file-comment:hover {
+  color: var(--fgColor-accent, #0969da);
+  background-color: var(--control-transparent-bgColor-hover, rgba(0, 0, 0, 0.06));
+}
+.add-file-comment svg {
+  fill: currentColor;
+}
+
+/* file-level comment threads sit at the top of the file body as a banner */
+.file-comment,
+.file-comment-compose {
+  padding: 10px 16px;
+  background-color: var(--bgColor-muted, #f6f8fa);
+  border-bottom: 1px solid var(--borderColor-default, #d1d9e0);
+}
+
+/* ---- misc states ------------------------------------------------------- */
+.binary-notice {
+  padding: 16px;
+  text-align: center;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+}
