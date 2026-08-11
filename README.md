@@ -19,13 +19,24 @@ In the future I'd like to tighten the feedback loop with Claude and not copy/pas
 
 This is almost entirely vibe-coded. I've barely even looked at the code. Having said that, I am a giant hypocrite and am not accepting any AI created contributions to this codebase right now. In fact, I'm not really accepting *any* changes yet. There's a lot I want to do personally before opening this up to that. 
 
-## Run
+## Install
+
+```bash
+npm install -g @mdesjardins/prequel
+```
+
+Then run it from inside any git repo:
+
+```bash
+prequel [repoPath] [--base <ref>] [--port <n>] [--no-open]
+```
+
+## Run from source
 
 ```bash
 npm install
 npm start                 # serves the sample diff, opens the browser
-# or, once linked globally:
-prequel [repoPath] [--base <ref>] [--port <n>] [--no-open]
+npm link                  # makes `prequel` global, with live edits
 ```
 
 URL params (all optional): `?view=split|unified` picks the layout,

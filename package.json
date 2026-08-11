@@ -1,11 +1,40 @@
 {
-  "name": "prequel",
-  "version": "0.0.0",
+  "name": "@mdesjardins/prequel",
+  "version": "0.1.0",
   "description": "Review it before it's a pull request — a local, GitHub-style diff reviewer",
   "type": "module",
+  "license": "GPL-3.0-or-later",
+  "author": "Mike Desjardins",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mdesjardins/prequel.git"
+  },
+  "homepage": "https://github.com/mdesjardins/prequel#readme",
+  "bugs": {
+    "url": "https://github.com/mdesjardins/prequel/issues"
+  },
   "bin": {
     "prequel": "bin/prequel.js"
   },
+  "files": [
+    "bin",
+    "src",
+    "views",
+    "public"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "git",
+    "diff",
+    "code-review",
+    "pull-request",
+    "cli"
+  ],
   "scripts": {
     "start": "node bin/prequel.js",
     "dev": "node bin/prequel.js"
@@ -14,7 +43,6 @@
     "@primer/primitives": "^10.5.0",
     "ejs": "^3.1.10",
     "express": "^4.21.2",
-    "g": "^2.0.1",
     "marked": "^12.0.2",
     "open": "^10.1.0",
     "shiki": "^1.29.2"
