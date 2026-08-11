@@ -5,66 +5,19 @@
 A local web app that renders a Git repo's diff using a UI that looks like
 GitHub's Pull Request **Files changed** tab. Supports system light/dark mode.
 
-See the full plan: `~/_work/anrok/doc/plans/github-pr-simulator.md`.
+<img width="1285" height="718" alt="Screen Shot 2026-08-11 at 11 40 30" src="https://github.com/user-attachments/assets/67adea24-2a1b-4fb2-921c-73618fe2a273" />
 
-## Status
+## Why
 
-**Phase 0 (done):** server + CLI skeleton, GitHub-faithful diff rendering
-(Primer design tokens + hand-authored diff CSS), light/dark parity, and both
-**unified** and **split (side-by-side)** views with a GitHub-style toggle
-(defaults to split; choice persists in localStorage).
+If you're like me, you've probably spent hundreds of hours over more than a decade reviewing code, and you've done almost all of it through Github's pull request review interface. It's comfortable, and for me, it shifts my brain into a "mode" where it can efficiently evaluate and comment on code.
 
-**Phase 1 (done):** reads a real git repo and renders its diff.
-- `gitService` shells out to `git`; three change scopes via `?diff=`:
-  `working` (uncommitted + untracked, **default**), `branch` (committed vs
-  base), `all` (branch commits + uncommitted + untracked). The chosen scope
-  persists across loads (like the split/unified view).
-- Untracked files are included (via `git diff --no-index`).
-- `diffParser` turns raw patch text into the render model (added / modified /
-  removed / renamed / copied / binary).
-- **Syntax highlighting** via Shiki using GitHub's own `github-light` /
-  `github-dark` themes (dual-theme, follows the color mode).
-- **Hunk context expansion**: click the unfold icon in a hunk header to load
-  hidden context (between hunks and above the first hunk).
+In the day of agentic coding, I was finding that my brain likes this style of review so much that I'd actually push code to Github to review it before telling Claude what changes I wanted made. That seemed silly, so I created this thing. It's basically a simulator of Github's PR interface, but works only on your locally staged and unstaged files. You can comment on them and easily dump this into your Claude Code session to make changes.
 
-When launched outside a git repo, it falls back to a built-in sample diff.
+In the future I'd like to tighten the feedback loop with Claude and not copy/paste my comments for it to work on, not manually refresh the page, etc., but this was mostly a proof of concept.
 
-**Phase 2a (done) — review comments:**
-- Hover a line → blue **+** in the gutter → inline compose box → save. Comments
-  render as GitHub-style inline threads (markdown-rendered via `marked`), with
-  delete. Works in unified and split.
-- **Multi-line ranges**: shift-click the end line, or drag across the gutter, to
-  comment on a block (highlighted while selecting; thread anchored after the end
-  line; exports as `Lines N–M` with the whole block).
-- Persisted centrally in `~/.prequel/<repo-hash>.json`, tagged by branch; injected
-  on load and mutated live (no reload). REST API under `/api/comments`.
-**Phase 2b (done) — export to Claude:**
-- "Export N comments for Claude" button (subnav) builds grouped-by-file,
-  code-fenced markdown, writes it to `<repo>/.prequel/review-<ts>.md`, and copies
-  it to the clipboard. JSON variant available via the API.
-- `.prequel/` is auto-added to the repo's `.git/info/exclude` so exports don't
-  appear as untracked in the diff or get committed.
+## Note
 
-**Phase 2c (done) — round-trip ergonomics:**
-- **File-level comments**: the comment button in a file header adds a comment
-  on the whole file (not a line); it renders as a banner atop the file and
-  exports under that file as "File comment".
-- **Clear all** button (with a few-seconds **Undo**) for a clean slate between
-  review rounds; the export toast also offers **Clear now**. This suits the
-  loop (comment → hand to Claude → Claude fixes → re-review) where comments are
-  single-use directives, so resolve/outdated-flagging/edit-in-place were
-  intentionally skipped. (Multi-line ranges — see Phase 2a — were added later.)
-
-**Phase 1.5 (in progress):**
-- **Changed-files tree** — a sticky, collapsible left sidebar (nested folders,
-  path-compressed like GitHub, status-colored, per-file counts). Click a file
-  to jump to it; toggle the pane from the subnav. Files marked **Viewed** are
-  checked and struck through in the tree. **Drag the divider** to resize the
-  pane (width persists; double-click the divider to reset).
-- **Word-level (intra-line) highlighting** — changed characters within a
-  modified line get GitHub's darker red/green overlay, layered on top of the
-  Shiki syntax colors (LCS word diff in `src/render/wordDiff.js`).
-- Full-width layout (the diff fills the window).
+This is almost entirely vibe-coded. I've barely even looked at the code. Having said that, I am a giant hypocrite and am not accepting any AI created contributions to this codebase right now. In fact, I'm not really accepting *any* changes yet. There's a lot I want to do personally before opening this up to that. 
 
 ## Run
 
