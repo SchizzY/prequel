@@ -31,6 +31,31 @@ Then run it from inside any git repo:
 prequel [repoPath] [--base <ref>] [--port <n>] [--no-open]
 ```
 
+## Closing the loop with Claude
+
+Instead of copy/pasting the export, install the bundled skill so Claude Code can
+read your comments straight from the running server and resolve each one as it
+addresses it:
+
+```bash
+mkdir -p ~/.claude/skills/prequel
+cp "$(npm root -g)/@mdesjardins/prequel/skills/prequel/SKILL.md" ~/.claude/skills/prequel/
+```
+
+It goes in `~/.claude/skills` rather than a project's `.claude/skills` because you
+run prequel *against* other repos. Then, from a Claude Code session in the repo
+you're reviewing: `/prequel`. Claude finds the server by scanning ports 4711-4720
+and matching the repo root reported by `/healthz`, works the comments one at a
+time, and `PATCH`es each to `status: resolved` as it goes.
+
+The page updates live over an event stream, so comments resolve and Claude's
+replies appear as it works — no reload. Append `?live=0` to the URL to opt out.
+
+Claude can reply in a thread as well as resolve it, which is where it explains a
+decision or says why it *didn't* make a change. Its messages are labelled and
+accented so they're distinguishable from yours, and they never re-enter its own
+work queue. You can also resolve or reopen any comment yourself from the thread.
+
 ## Run from source
 
 ```bash

@@ -13,6 +13,13 @@
 
   const isSplitTable = (table) => table.classList.contains('diff-table-split');
 
+  // Identifies this tab so it can ignore the echo of its own mutations coming
+  // back over the event stream (it already applied them locally).
+  const CLIENT_ID =
+    (window.crypto && crypto.randomUUID && crypto.randomUUID()) || String(Math.random());
+  const jsonHeaders = () => ({ 'content-type': 'application/json', 'x-prequel-client': CLIENT_ID });
+  const clientHeaders = () => ({ 'x-prequel-client': CLIENT_ID });
+
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
@@ -52,24 +59,48 @@
   }
 
   // --- shared thread markup ---------------------------------------------
-  function commentInner(c) {
-    let time = '';
+  // A thread is one root comment plus its replies, rendered as stacked cards
+  // inside a single container — the shape GitHub uses.
+  function timeLabel(c) {
     try {
-      time = new Date(c.createdAt).toLocaleString();
+      return new Date(c.createdAt).toLocaleString();
     } catch {
-      /* ignore */
+      return '';
     }
+  }
+
+  function commentCardHtml(c, { isRoot }) {
+    const author = c.author === 'claude' ? 'claude' : 'you';
     const range =
-      c.side !== 'file' && c.endLine > c.startLine
+      isRoot && c.side !== 'file' && c.endLine > c.startLine
         ? `<span class="comment-lines">Lines ${c.startLine}–${c.endLine}</span>`
         : '';
+    const resolved = isRoot && c.status === 'resolved';
+    const tools = isRoot
+      ? `<button class="comment-resolve">${resolved ? 'Reopen' : 'Resolve'}</button>` +
+        `<button class="comment-reply-btn">Reply</button>`
+      : '';
     return (
-      `<div class="comment-thread"><div class="comment">` +
-      `<div class="comment-header">${range}<span class="comment-time">${escapeHtml(time)}</span>` +
-      `<span class="comment-tools"><button class="comment-delete" title="Delete comment">Delete</button></span></div>` +
+      `<div class="comment" data-comment-id="${c.id}" data-author="${author}">` +
+      `<div class="comment-header">` +
+      `<span class="comment-author comment-author-${author}">${author === 'claude' ? 'Claude' : 'You'}</span>` +
+      range +
+      `<span class="comment-time">${escapeHtml(timeLabel(c))}</span>` +
+      (resolved ? '<span class="comment-resolved-pill">Resolved</span>' : '') +
+      `<span class="comment-tools">${tools}` +
+      `<button class="comment-delete" title="Delete comment">Delete</button></span>` +
+      `</div>` +
       `<div class="comment-body markdown-body">${c.bodyHtml || escapeHtml(c.body || '')}</div>` +
-      `</div></div>`
+      `</div>`
     );
+  }
+
+  function threadInner(root, replies) {
+    const cards = [commentCardHtml(root, { isRoot: true })].concat(
+      (replies || []).map((r) => commentCardHtml(r, { isRoot: false }))
+    );
+    const cls = root.status === 'resolved' ? ' is-resolved' : '';
+    return `<div class="comment-thread${cls}" data-root-id="${root.id}">${cards.join('')}</div>`;
   }
 
   function composeInner() {
@@ -92,10 +123,10 @@
     return side === 'old' ? cell + empty : empty + cell;
   }
 
-  const commentRowHtml = (c, isSplit) =>
-    `<tr class="comment-row" data-comment-id="${c.id}">${threadCells(isSplit, c.side, commentInner(c))}</tr>`;
-  const fileCommentHtml = (c) =>
-    `<div class="file-comment" data-comment-id="${c.id}">${commentInner(c)}</div>`;
+  const commentRowHtml = (c, isSplit, replies) =>
+    `<tr class="comment-row" data-root-id="${c.id}">${threadCells(isSplit, c.side, threadInner(c, replies))}</tr>`;
+  const fileCommentHtml = (c, replies) =>
+    `<div class="file-comment" data-root-id="${c.id}">${threadInner(c, replies)}</div>`;
 
   // --- anchoring helpers -------------------------------------------------
   function findAnchorCell(filePath, side, line) {
@@ -230,7 +261,7 @@
     try {
       const res = await fetch('/api/comments', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonHeaders(),
         body: JSON.stringify({
           filePath: form.dataset.filePath,
           side: form.dataset.side,
@@ -257,22 +288,79 @@
     }
   }
 
-  async function removeComment(el) {
-    try {
-      await fetch(`/api/comments/${el.dataset.commentId}`, { method: 'DELETE' });
-      el.remove();
+  // Removing a root takes the whole thread (the server cascades its replies);
+  // removing a reply takes just that card.
+  function dropComment(id) {
+    const container = document.querySelector(`[data-root-id="${CSS.escape(id)}"]`);
+    if (container) {
+      container.remove();
       commentCount = Math.max(0, commentCount - 1);
       updateButtons();
+      return;
+    }
+    const card = document.querySelector(`.comment[data-comment-id="${CSS.escape(id)}"]`);
+    if (card) card.remove();
+  }
+
+  async function removeComment(card) {
+    const id = card.dataset.commentId;
+    try {
+      await fetch(`/api/comments/${id}`, { method: 'DELETE', headers: clientHeaders() });
+      dropComment(id);
     } catch {
       /* leave it in place on failure */
     }
   }
 
+  async function setStatus(id, status) {
+    try {
+      const res = await fetch(`/api/comments/${id}`, {
+        method: 'PATCH',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ status }),
+      });
+      const { comment } = await res.json();
+      applyStatus(comment);
+    } catch {
+      /* leave the UI as-is on failure */
+    }
+  }
+
+  // Repaint a root card in place so its pill and Resolve/Reopen label match.
+  function applyStatus(c) {
+    const card = document.querySelector(`.comment[data-comment-id="${CSS.escape(c.id)}"]`);
+    if (!card) return;
+    const thread = card.closest('.comment-thread');
+    const isRoot = thread && thread.dataset.rootId === c.id;
+    card.outerHTML = commentCardHtml(c, { isRoot: Boolean(isRoot) });
+    if (isRoot) thread.classList.toggle('is-resolved', c.status === 'resolved');
+  }
+
+  async function submitReply(form) {
+    const thread = form.closest('.comment-thread');
+    const body = form.querySelector('.comment-input').value.trim();
+    if (!body || !thread) return;
+    form.querySelectorAll('button').forEach((b) => (b.disabled = true));
+    try {
+      const res = await fetch('/api/comments', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ parentId: thread.dataset.rootId, body }),
+      });
+      const { comment } = await res.json();
+      form.closest('.comment-reply-compose').remove();
+      thread.insertAdjacentHTML('beforeend', commentCardHtml(comment, { isRoot: false }));
+    } catch {
+      form.querySelectorAll('button').forEach((b) => (b.disabled = false));
+    }
+  }
+
   // --- load, export, clear ----------------------------------------------
-  function renderComment(c) {
+  function renderComment(c, replies) {
     if (c.side === 'file') {
       const file = document.querySelector(`.file[data-path="${CSS.escape(c.filePath)}"]`);
-      if (file) file.querySelector('.file-comments').insertAdjacentHTML('beforeend', fileCommentHtml(c));
+      if (file)
+        file.querySelector('.file-comments').insertAdjacentHTML('beforeend', fileCommentHtml(c, replies));
       return;
     }
     // ranges anchor after the end line (GitHub's convention)
@@ -280,7 +368,22 @@
     if (!cell) return; // line not present in the current view/mode
     const row = cell.closest('tr');
     const isSplit = isSplitTable(cell.closest('table'));
-    insertionPointAfter(row).insertAdjacentHTML('afterend', commentRowHtml(c, isSplit));
+    insertionPointAfter(row).insertAdjacentHTML('afterend', commentRowHtml(c, isSplit, replies));
+  }
+
+  // Replies arrive as flat records; bucket them under the root they answer.
+  function groupThreads(comments) {
+    const roots = comments.filter((c) => !c.parentId);
+    const byParent = new Map();
+    for (const c of comments) {
+      if (!c.parentId) continue;
+      if (!byParent.has(c.parentId)) byParent.set(c.parentId, []);
+      byParent.get(c.parentId).push(c);
+    }
+    for (const list of byParent.values()) {
+      list.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    }
+    return roots.map((root) => ({ root, replies: byParent.get(root.id) || [] }));
   }
 
   async function loadComments() {
@@ -291,9 +394,10 @@
     } catch {
       return;
     }
-    commentCount = comments.length;
+    const threads = groupThreads(comments);
+    commentCount = threads.length; // the button counts asks, not messages
     updateButtons();
-    comments.forEach(renderComment);
+    threads.forEach(({ root, replies }) => renderComment(root, replies));
   }
 
   async function runExport() {
@@ -302,7 +406,7 @@
     try {
       const res = await fetch('/api/export', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonHeaders(),
         body: JSON.stringify({ branch, format: 'md' }),
       });
       const data = await res.json();
@@ -337,7 +441,7 @@
     try {
       const res = await fetch('/api/comments/clear', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: jsonHeaders(),
         body: JSON.stringify({ branch }),
       });
       const { cleared } = await res.json();
@@ -352,7 +456,7 @@
 
   async function undoClear() {
     try {
-      const res = await fetch('/api/comments/restore', { method: 'POST' });
+      const res = await fetch('/api/comments/restore', { method: 'POST', headers: clientHeaders() });
       const { restored } = await res.json();
       if (!restored) return;
       removeAllCommentEls();
@@ -404,13 +508,36 @@
     const cancel = e.target.closest('.comment-cancel');
     if (cancel) {
       e.preventDefault();
-      cancel.closest('.comment-compose-row, .file-comment-compose').remove();
+      cancel.closest('.comment-compose-row, .file-comment-compose, .comment-reply-compose').remove();
       return clearRangeHighlight();
+    }
+    const reply = e.target.closest('.comment-reply-btn');
+    if (reply) {
+      e.preventDefault();
+      const thread = reply.closest('.comment-thread');
+      let compose = thread.querySelector('.comment-reply-compose');
+      if (!compose) {
+        thread.insertAdjacentHTML(
+          'beforeend',
+          `<div class="comment-reply-compose">${composeInner()}</div>`
+        );
+        compose = thread.querySelector('.comment-reply-compose');
+      }
+      compose.querySelector('.comment-input').focus();
+      return;
+    }
+    const resolve = e.target.closest('.comment-resolve');
+    if (resolve) {
+      e.preventDefault();
+      const card = resolve.closest('.comment');
+      const isResolved = resolve.textContent.trim() === 'Reopen';
+      setStatus(card.dataset.commentId, isResolved ? 'open' : 'resolved');
+      return;
     }
     const del = e.target.closest('.comment-delete');
     if (del) {
       e.preventDefault();
-      removeComment(del.closest('[data-comment-id]'));
+      removeComment(del.closest('.comment'));
     }
   });
 
@@ -457,11 +584,75 @@
 
   document.addEventListener('submit', (e) => {
     const form = e.target.closest('.comment-compose');
-    if (form) {
-      e.preventDefault();
-      submitCompose(form);
-    }
+    if (!form) return;
+    e.preventDefault();
+    if (form.closest('.comment-reply-compose')) submitReply(form);
+    else submitCompose(form);
   });
 
+  // --- live updates -------------------------------------------------------
+  // Apply changes made outside this tab (Claude working the review via the
+  // API, or a second browser window) without a reload.
+  function applyRemote(msg) {
+    if (msg.origin === CLIENT_ID) return; // our own change, already applied
+    switch (msg.type) {
+      case 'comment.created': {
+        const c = msg.comment;
+        if (c.branch && branch && c.branch !== branch) return;
+        if (c.parentId) {
+          const thread = document.querySelector(
+            `.comment-thread[data-root-id="${CSS.escape(c.parentId)}"]`
+          );
+          if (!thread || thread.querySelector(`.comment[data-comment-id="${CSS.escape(c.id)}"]`)) return;
+          const compose = thread.querySelector('.comment-reply-compose');
+          const html = commentCardHtml(c, { isRoot: false });
+          if (compose) compose.insertAdjacentHTML('beforebegin', html);
+          else thread.insertAdjacentHTML('beforeend', html);
+          return;
+        }
+        if (document.querySelector(`[data-root-id="${CSS.escape(c.id)}"]`)) return;
+        renderComment(c, []);
+        commentCount++;
+        updateButtons();
+        return;
+      }
+      case 'comment.updated':
+        applyStatus(msg.comment);
+        return;
+      case 'comment.deleted':
+        dropComment(msg.id);
+        return;
+      case 'comments.reset':
+        removeAllCommentEls();
+        loadComments();
+        return;
+    }
+  }
+
+  function connectEvents() {
+    if (!window.EventSource) return; // no live updates; reload still works
+    // ?live=0 opts out — useful when a tool (or a headless browser) needs the
+    // page to finish loading rather than hold a stream open.
+    if (new URLSearchParams(location.search).get('live') === '0') return;
+    const es = new EventSource('/api/events');
+    es.addEventListener('message', (e) => {
+      try {
+        applyRemote(JSON.parse(e.data));
+      } catch {
+        /* ignore malformed frames */
+      }
+    });
+    // EventSource reconnects on its own; on reconnect we may have missed
+    // events, so resync from the server.
+    es.addEventListener('open', () => {
+      if (es.dataset_seen) {
+        removeAllCommentEls();
+        loadComments();
+      }
+      es.dataset_seen = true;
+    });
+  }
+
   loadComments();
+  connectEvents();
 })();

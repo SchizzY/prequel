@@ -8,6 +8,13 @@ function lineLabel(c) {
   return c.startLine === c.endLine ? `Line ${c.startLine}` : `Lines ${c.startLine}–${c.endLine}`;
 }
 
+// Comment ids ride along as HTML comments: invisible in rendered markdown,
+// but readable by anything reading the raw text — which is how a client marks
+// the right comment resolved once it has addressed it.
+function idMarker(c) {
+  return `<!-- prequel:id ${c.id} -->`;
+}
+
 function blockquote(body) {
   return String(body || '')
     .split('\n')
@@ -41,11 +48,13 @@ export function buildMarkdown(repoRoot, branch, comments) {
     for (const c of list) {
       if (c.side === 'file') {
         out.push('### File comment');
+        out.push(idMarker(c));
         out.push(blockquote(c.body));
         out.push('');
         continue;
       }
       out.push(`### ${lineLabel(c)}${c.side === 'old' ? ' (old side)' : ''}`);
+      out.push(idMarker(c));
       const code = (c.lineSnapshot || []).join('\n');
       if (code) {
         out.push('```' + lang);
@@ -63,6 +72,7 @@ export function buildJson(comments) {
   return JSON.stringify(
     bySortedFile(comments).flatMap(([file, list]) =>
       list.map((c) => ({
+        id: c.id,
         file,
         side: c.side,
         lines: c.side === 'file' ? null : [c.startLine, c.endLine],

@@ -53,6 +53,11 @@ export async function addComment(repoRoot, data) {
   return comment;
 }
 
+export async function getComment(repoRoot, id) {
+  const all = await readAll(repoRoot);
+  return all.find((c) => c.id === id) || null;
+}
+
 export async function updateComment(repoRoot, id, patch) {
   const all = await readAll(repoRoot);
   const comment = all.find((c) => c.id === id);
@@ -62,13 +67,14 @@ export async function updateComment(repoRoot, id, patch) {
   return comment;
 }
 
+// Deleting a root comment also deletes its replies — a reply without its
+// comment has nothing to attach to and would be invisible in the UI.
 export async function deleteComment(repoRoot, id) {
   const all = await readAll(repoRoot);
-  const idx = all.findIndex((c) => c.id === id);
-  if (idx < 0) return false;
-  all.splice(idx, 1);
-  await writeAll(repoRoot, all);
-  return true;
+  if (!all.some((c) => c.id === id)) return false;
+  const kept = all.filter((c) => c.id !== id && c.parentId !== id);
+  await writeAll(repoRoot, kept);
+  return all.length - kept.length;
 }
 
 // In-memory buffer of the last bulk-clear, so the UI can offer a quick Undo.

@@ -20,7 +20,8 @@
     "bin",
     "src",
     "views",
-    "public"
+    "public",
+    "skills"
   ],
   "engines": {
     "node": ">=18"

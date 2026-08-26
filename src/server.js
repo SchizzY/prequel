@@ -11,6 +11,7 @@ import { sampleDiff } from './sampleDiff.js';
 import {
   listComments,
   addComment,
+  getComment,
   updateComment,
   deleteComment,
   clearComments,
@@ -140,17 +141,91 @@ export function createServer({ repoRoot = null, defaultBase = null } = {}) {
     }
   });
 
+  // --- live updates (SSE) -------------------------------------------------
+  // Every mutation is broadcast so open pages reflect changes made elsewhere —
+  // notably by Claude working the review through the API.
+  const sseClients = new Set();
+
+  // `origin` is the client id sent by whoever made the change; that client
+  // already applied it locally and skips its own echo.
+  function emit(type, data, req) {
+    const payload = JSON.stringify({ type, origin: req?.get('x-prequel-client') || null, ...data });
+    for (const client of sseClients) {
+      try {
+        client.write(`data: ${payload}\n\n`);
+      } catch {
+        /* dropped connection; the close handler will evict it */
+      }
+    }
+  }
+
+  app.get('/api/events', (req, res) => {
+    res.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no',
+    });
+    res.write('retry: 2000\n\n');
+    sseClients.add(res);
+    // Comment-only frames keep the connection from idling out.
+    const ping = setInterval(() => {
+      try {
+        res.write(': ping\n\n');
+      } catch {
+        /* ignore */
+      }
+    }, 25000);
+    req.on('close', () => {
+      clearInterval(ping);
+      sseClients.delete(res);
+    });
+  });
+
   // --- review comments ---------------------------------------------------
   app.get('/api/comments', async (req, res) => {
     if (!repoRoot) return res.json({ comments: [] });
     const branch = req.query.branch ? String(req.query.branch) : null;
-    const comments = await listComments(repoRoot, branch);
+    // Optional filters; omit them all to get everything (what the UI wants).
+    //   ?status=open|resolved   ?author=user|claude   ?roots=1 (exclude replies)
+    const status = ['open', 'resolved'].includes(req.query.status) ? req.query.status : null;
+    const author = ['user', 'claude'].includes(req.query.author) ? req.query.author : null;
+    const rootsOnly = req.query.roots === '1';
+    let comments = await listComments(repoRoot, branch);
+    // Comments predating these fields are treated as open, user-authored roots.
+    if (status) comments = comments.filter((c) => (c.status || 'open') === status);
+    if (author) comments = comments.filter((c) => (c.author || 'user') === author);
+    if (rootsOnly) comments = comments.filter((c) => !c.parentId);
     res.json({ comments: comments.map(withHtml) });
   });
 
   app.post('/api/comments', async (req, res) => {
     if (!repoRoot) return res.status(400).json({ error: 'no repo' });
     const b = req.body || {};
+    const author = b.author === 'claude' ? 'claude' : 'user';
+
+    // A reply carries only { parentId, body } — it inherits its anchor from the
+    // comment it answers, so the two can never drift apart.
+    if (b.parentId) {
+      const parent = await getComment(repoRoot, String(b.parentId));
+      if (!parent) return res.status(404).json({ error: 'parent not found' });
+      if (parent.parentId) return res.status(400).json({ error: 'cannot reply to a reply' });
+      if (!b.body) return res.status(400).json({ error: 'bad params' });
+      const reply = await addComment(repoRoot, {
+        parentId: parent.id,
+        author,
+        filePath: parent.filePath,
+        side: parent.side,
+        startLine: parent.startLine,
+        endLine: parent.endLine,
+        body: String(b.body),
+        branch: parent.branch ?? null,
+        lineSnapshot: [],
+      });
+      emit('comment.created', { comment: withHtml(reply) }, req);
+      return res.json({ comment: withHtml(reply) });
+    }
+
     const side = b.side === 'old' ? 'old' : b.side === 'file' ? 'file' : 'new';
     // file-level comments aren't tied to a line
     const startLine = side === 'file' ? 0 : Number(b.startLine);
@@ -165,7 +240,10 @@ export function createServer({ repoRoot = null, defaultBase = null } = {}) {
       body: String(b.body),
       branch: b.branch ? String(b.branch) : null,
       lineSnapshot: Array.isArray(b.lineSnapshot) ? b.lineSnapshot.map(String) : [],
+      author,
+      parentId: null,
     });
+    emit('comment.created', { comment: withHtml(comment) }, req);
     res.json({ comment: withHtml(comment) });
   });
 
@@ -177,13 +255,15 @@ export function createServer({ repoRoot = null, defaultBase = null } = {}) {
     if (b.status === 'open' || b.status === 'resolved') patch.status = b.status;
     const comment = await updateComment(repoRoot, req.params.id, patch);
     if (!comment) return res.status(404).json({ error: 'not found' });
+    emit('comment.updated', { comment: withHtml(comment) }, req);
     res.json({ comment: withHtml(comment) });
   });
 
   app.delete('/api/comments/:id', async (req, res) => {
     if (!repoRoot) return res.status(400).json({ error: 'no repo' });
-    const ok = await deleteComment(repoRoot, req.params.id);
-    res.json({ ok });
+    const removed = await deleteComment(repoRoot, req.params.id);
+    if (removed) emit('comment.deleted', { id: req.params.id }, req);
+    res.json({ ok: Boolean(removed), removed });
   });
 
   // Bulk clear (with undo) for a clean slate between review rounds.
@@ -191,12 +271,14 @@ export function createServer({ repoRoot = null, defaultBase = null } = {}) {
     if (!repoRoot) return res.status(400).json({ error: 'no repo' });
     const branch = req.body?.branch ? String(req.body.branch) : null;
     const cleared = await clearComments(repoRoot, branch);
+    emit('comments.reset', {}, req);
     res.json({ cleared });
   });
 
   app.post('/api/comments/restore', async (req, res) => {
     if (!repoRoot) return res.status(400).json({ error: 'no repo' });
     const restored = await restoreCleared(repoRoot);
+    emit('comments.reset', {}, req);
     res.json({ restored });
   });
 
@@ -206,7 +288,10 @@ export function createServer({ repoRoot = null, defaultBase = null } = {}) {
     if (!repoRoot) return res.status(400).json({ error: 'no repo' });
     const branch = req.body?.branch ? String(req.body.branch) : null;
     const format = req.body?.format === 'json' ? 'json' : 'md';
-    const comments = await listComments(repoRoot, branch);
+    // Replies (and anything Claude wrote) are conversation, not asks — the
+    // export is the list of things being requested.
+    const all = await listComments(repoRoot, branch);
+    const comments = all.filter((c) => !c.parentId && (c.author || 'user') === 'user');
     if (!comments.length) return res.json({ count: 0, content: '', path: null });
 
     const content =
@@ -225,7 +310,9 @@ export function createServer({ repoRoot = null, defaultBase = null } = {}) {
     res.json({ count: comments.length, content, path: path.join('.prequel', filename) });
   });
 
-  app.get('/healthz', (req, res) => res.json({ ok: true }));
+  // Identifies this server and the repo it serves, so a client scanning ports
+  // can find the instance belonging to the repo it cares about.
+  app.get('/healthz', (req, res) => res.json({ ok: true, app: 'prequel', repoRoot }));
 
   return app;
 }

@@ -1036,3 +1036,83 @@ body {
   color: var(--fgColor-muted, #59636e);
   font-size: 12px;
 }
+
+/* --- threads: a root comment plus its replies ---------------------------- */
+/* Cards stack inside one thread; replies indent slightly to show nesting. */
+.comment-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comment-thread .comment + .comment {
+  margin-left: 20px;
+}
+
+.comment-reply-compose {
+  margin-left: 20px;
+  max-width: 900px;
+}
+
+/* Header is now author · range · time on the left, actions pinned right. */
+.comment-header {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.comment-lines {
+  margin-right: 0;
+}
+
+.comment-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.comment-author {
+  font-weight: 600;
+  color: var(--fgColor-default, #1f2328);
+}
+
+.comment-author-claude {
+  color: var(--fgColor-accent, #0969da);
+}
+
+/* A left accent makes Claude's replies scannable at a glance. */
+.comment[data-author='claude'] {
+  border-left: 3px solid var(--borderColor-accent-emphasis, #0969da);
+}
+
+.comment-resolve,
+.comment-reply-btn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+  cursor: pointer;
+}
+.comment-resolve:hover,
+.comment-reply-btn:hover {
+  color: var(--fgColor-accent, #0969da);
+}
+
+.comment-resolved-pill {
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--fgColor-onEmphasis, #fff);
+  background-color: var(--bgColor-done-emphasis, #8250df);
+}
+
+/* Resolved threads recede but stay readable, and come back on hover. */
+.comment-thread.is-resolved {
+  opacity: 0.6;
+}
+.comment-thread.is-resolved:hover {
+  opacity: 1;
+}
