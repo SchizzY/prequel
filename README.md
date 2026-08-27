@@ -38,13 +38,20 @@ read your comments straight from the running server and resolve each one as it
 addresses it:
 
 ```bash
-mkdir -p ~/.claude/skills/prequel
-cp "$(npm root -g)/@mdesjardins/prequel/skills/prequel/SKILL.md" ~/.claude/skills/prequel/
+prequel install claude
 ```
 
 It goes in `~/.claude/skills` rather than a project's `.claude/skills` because you
-run prequel *against* other repos. Then, from a Claude Code session in the repo
-you're reviewing: `/prequel`. Claude finds the server by scanning ports 4711-4720
+run prequel *against* other repos — pass `--project` to install into the current
+repo instead, if you'd rather commit it and share it with a team. The command is
+idempotent, and refuses to overwrite a skill you've edited unless you pass
+`--force`. If an installed skill falls behind after an upgrade, prequel says so at
+startup.
+
+`claude` is the only agent supported today; the command takes an agent name so
+support for others can be added without renaming it.
+
+Then, from a Claude Code session in the repo you're reviewing: `/prequel`. Claude finds the server by scanning ports 4711-4720
 and matching the repo root reported by `/healthz`, works the comments one at a
 time, and `PATCH`es each to `status: resolved` as it goes.
 
