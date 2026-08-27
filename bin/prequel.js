@@ -1,10 +1,17 @@
 #!/usr/bin/env node
 import { createServer as createNetServer } from 'node:net';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 import open from 'open';
 import { createServer } from '../src/server.js';
 import { resolveRepoRoot } from '../src/git/gitService.js';
 import { install, staleTargets, TARGET_NAMES } from '../src/installer.js';
+
+const VERSION = JSON.parse(
+  readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8')
+).version;
 
 // --- tiny arg parser (avoid a dependency for Phase 0) --------------------
 function parseArgs(argv) {
@@ -18,6 +25,7 @@ function parseArgs(argv) {
     else if (a === '--project') opts.project = true;
     else if (a === '--force' || a === '-f') opts.force = true;
     else if (a === '--help' || a === '-h') opts.help = true;
+    else if (a === '--version' || a === '-v' || a === '-V') opts.version = true;
     else if (!a.startsWith('-')) positional.push(a);
   }
   if (positional[0]) opts.repoPath = positional[0];
@@ -34,6 +42,7 @@ Usage:
   --base     Base ref to diff against (default: main/master)
   --port     Port to listen on (default: first free from 4711)
   --no-open  Don't auto-open the browser
+  --version  Print the installed version and exit
 
 install sets up a coding agent to work a review directly — reading your
 comments, fixing them one at a time, and resolving each in the UI as it goes.
@@ -84,6 +93,10 @@ async function runInstall(target, opts) {
 async function main() {
   const argv = process.argv.slice(2);
   const opts = parseArgs(argv);
+  if (opts.version) {
+    process.stdout.write(`${VERSION}\n`);
+    return;
+  }
   if (opts.help) {
     process.stdout.write(HELP);
     return;
