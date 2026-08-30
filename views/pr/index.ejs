@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" data-color-mode="<%= colorMode %>" data-light-theme="light" data-dark-theme="dark">
+<head>
+  <%- include('../partials/head', { title: 'Pull requests · ' + repo.name }) %>
+</head>
+<body>
+  <header class="pr-header">
+    <div class="pr-header-inner">
+      <div class="pr-title-line">
+        <h1 class="pr-heading">Pull requests</h1>
+      </div>
+      <div class="pr-status-line">
+        <span class="repo-path" title="<%= repoPath %>"><%= repoPath %></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="pr-main">
+    <% if (!pulls.length) { %>
+      <div class="notice notice-info">
+        No pull requests yet. Create one with
+        <code>POST /api/pulls</code>, or run <code>prequel migrate</code> to import
+        comments from the old store.
+      </div>
+    <% } else { %>
+      <ul class="pr-list">
+        <% pulls.forEach(function (p) { %>
+          <li class="pr-list-item">
+            <span class="state-badge state-<%= p.state %>"><%= p.state %></span>
+            <div class="pr-list-main">
+              <a class="pr-list-title" href="/pr/<%= p.number %>">
+                <%= p.title %> <span class="pr-number">#<%= p.number %></span>
+              </a>
+              <div class="pr-list-meta">
+                <span class="ref-pill"><%= p.head_ref %></span>
+                <span class="ref-arrow">into</span>
+                <span class="ref-pill"><%= p.base_ref %></span>
+                <% if (p.counts.open) { %>
+                  <span class="pr-list-open"><%= p.counts.open %> open</span>
+                <% } %>
+                <% p.verdicts.forEach(function (v) { %>
+                  <span class="verdict verdict-<%= v.verdict === 'approve' ? 'approve' : v.verdict === 'request_changes' ? 'changes' : 'comment' %>"
+                        title="<%= v.handle %>"><%= v.handle %></span>
+                <% }); %>
+              </div>
+            </div>
+            <a class="pr-list-files" href="/pr/<%= p.number %>/files">
+              <%= p.counts.files %> file threads
+            </a>
+          </li>
+        <% }); %>
+      </ul>
+    <% } %>
+  </main>
+</body>
+</html>

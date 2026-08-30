@@ -1,0 +1,47 @@
+<%
+  const STATE_LABEL = { open: 'Open', draft: 'Draft', merged: 'Merged', closed: 'Closed' };
+  const VERDICT = {
+    approve: { label: 'approved', cls: 'verdict-approve', glyph: '✓' },
+    request_changes: { label: 'requested changes', cls: 'verdict-changes', glyph: '✗' },
+    comment: { label: 'commented', cls: 'verdict-comment', glyph: '💬' },
+  };
+%>
+<header class="pr-header">
+  <div class="pr-header-inner">
+    <div class="pr-title-line">
+      <a class="pr-back" href="/pulls" title="All pull requests">←</a>
+      <h1 class="pr-heading">
+        <%= pull.title %>
+        <span class="pr-number">#<%= pull.number %></span>
+      </h1>
+    </div>
+
+    <div class="pr-status-line">
+      <span class="state-badge state-<%= pull.state %>"><%= STATE_LABEL[pull.state] || pull.state %></span>
+      <span class="pr-refs">
+        <span class="ref-pill"><%= pull.head_ref %></span>
+        <span class="ref-arrow">into</span>
+        <span class="ref-pill"><%= pull.base_ref %></span>
+      </span>
+      <% if (verdicts && verdicts.length) { %>
+      <span class="verdict-list">
+        <% verdicts.forEach(function (v) { const info = VERDICT[v.verdict] || VERDICT.comment; %>
+          <span class="verdict <%= info.cls %>" title="<%= v.handle %> <%= info.label %>">
+            <span class="verdict-glyph"><%= info.glyph %></span><%= v.handle %>
+          </span>
+        <% }); %>
+      </span>
+      <% } %>
+    </div>
+
+    <nav class="pr-tabs" aria-label="Pull request sections">
+      <% tabs.forEach(function (tab) { %>
+        <a class="pr-tab<%= tab.id === active ? ' is-active' : '' %>"
+           href="<%= tab.href %>"
+           <%= tab.id === active ? 'aria-current="page"' : '' %>>
+          <%= tab.label %><% if (tab.count) { %><span class="tab-count"><%= tab.count %></span><% } %>
+        </a>
+      <% }); %>
+    </nav>
+  </div>
+</header>

@@ -20,6 +20,7 @@ import {
 import { buildMarkdown, buildJson } from './export/claudeExport.js';
 import { openDb } from './db/index.js';
 import { mountApi } from './api/routes.js';
+import { mountPages } from './pages/routes.js';
 import { marked } from 'marked';
 
 marked.setOptions({ breaks: true });
@@ -192,6 +193,7 @@ export function createServer({ repoRoot = null, defaultBase = null, dbPath } = {
     const db = openDb(dbPath);
     app.locals.db = db;
     mountApi(app, db, { repoRoot, emit });
+    mountPages(app, db, { repoRoot, defaultBase });
   }
 
   // --- review comments ---------------------------------------------------
