@@ -291,3 +291,19 @@ export function importedLegacyIds(db, repoId) {
       .map((r) => r.legacy_id)
   );
 }
+
+/**
+ * Move a thread's anchor after the code underneath it changed.
+ * Separate from setAnchorState because relocating is one atomic fact: where it
+ * now points, how confident we are, and the file version we decided against.
+ */
+export function updateAnchor(db, id, { startLine, endLine, anchorState, blobSha }) {
+  db.prepare(
+    `UPDATE thread
+     SET start_line = ?, end_line = ?, anchor_state = ?,
+         blob_sha = COALESCE(?, blob_sha),
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+     WHERE id = ?`
+  ).run(startLine, endLine, anchorState, blobSha ?? null, id);
+  return getThread(db, id);
+}

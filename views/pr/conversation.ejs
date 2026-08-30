@@ -44,11 +44,20 @@
             <% if (item.threads && item.threads.length) { %>
               <ul class="review-findings">
                 <% item.threads.forEach(function (t) { %>
-                  <li class="finding<%= t.status === 'resolved' ? ' is-resolved' : '' %>">
+                  <li class="finding<%= t.status === 'resolved' ? ' is-resolved' : '' %><%= t.anchor_state === 'lost' ? ' is-lost' : '' %>">
                     <% if (t.severity) { %><span class="sev sev-<%= t.severity %>"><%= t.severity %></span><% } %>
                     <a class="finding-loc" href="/pr/<%= pull.number %>/files#<%= t.file_path %>">
                       <%= t.file_path %><% if (t.start_line) { %>:<%= t.start_line %><% } %>
                     </a>
+                    <%
+                      // The code under this comment moved or went away. Say so:
+                      // a line number that silently drifted is worse than none.
+                    %>
+                    <% if (t.anchor_state === 'outdated') { %>
+                      <span class="anchor-flag anchor-outdated" title="The code here was changed after this comment was written">outdated</span>
+                    <% } else if (t.anchor_state === 'lost') { %>
+                      <span class="anchor-flag anchor-lost" title="The code this referred to is gone; needs a human">lost</span>
+                    <% } %>
                     <span class="finding-text"><%= t.comments.length ? t.comments[0].body : '' %></span>
                   </li>
                 <% }); %>

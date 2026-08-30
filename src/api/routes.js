@@ -28,6 +28,8 @@ import {
 } from '../model/reviews.js';
 import * as threads from '../model/threads.js';
 import { addEvent, listTimeline } from '../model/timeline.js';
+import { getBlobSha } from '../git/gitService.js';
+import { reanchorPull } from '../anchor/reanchor.js';
 
 const SEVERITIES = ['blocking', 'suggestion', 'nit', 'question'];
 const VERDICTS = ['approve', 'request_changes', 'comment'];
@@ -233,6 +235,13 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
       if (!p) missing(`unknown assignee: ${b.assignee}`);
       assigneeId = p.id;
     }
+    // Record which version of the file this was written against, so
+    // re-anchoring can tell "nothing moved" from "not checked yet" without
+    // rescanning every file on every pass.
+    const blobSha =
+      b.blobSha ??
+      (b.filePath ? await getBlobSha(repoRoot, { rev: 'WORKTREE', path: b.filePath }) : null);
+
     const thread = threads.createThread(db, {
       pullRequestId: pull.id,
       participantId: who.id,
@@ -241,7 +250,7 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
       side: b.side,
       startLine: b.startLine,
       endLine: b.endLine,
-      blobSha: b.blobSha,
+      blobSha,
       lineSnapshot: b.lineSnapshot,
       severity: b.severity,
       category: b.category,
@@ -334,6 +343,23 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
       payload: { from: thread.id, to: b.toThreadId, kind: b.kind },
     });
     res.json({ ok: true });
+  }));
+
+  // Re-point every thread at the code it was written about. Worth calling
+  // after an agent finishes editing, so the next reviewer is not handed line
+  // numbers that drifted underneath it.
+  app.post('/api/pulls/:number/reanchor', handle(async (req, res) => {
+    const pull = pullOr404(req);
+    const rev = req.body?.rev === 'HEAD' ? 'HEAD' : 'WORKTREE';
+    const changes = await reanchorPull(db, { repoRoot, pullRequestId: pull.id, rev });
+    for (const change of changes) emit('thread.reanchored', { change }, req);
+    res.json({
+      changed: changes.length,
+      moved: changes.filter((c) => c.moved).length,
+      lost: changes.filter((c) => c.anchorState === 'lost').length,
+      outdated: changes.filter((c) => c.anchorState === 'outdated').length,
+      changes,
+    });
   }));
 
   // --- the agent work queue ---------------------------------------------

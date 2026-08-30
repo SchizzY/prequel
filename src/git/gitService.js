@@ -136,3 +136,37 @@ export async function getBlobLines(repoRoot, { rev, path: filePath, start, end }
   const lines = all.slice(from - 1, end);
   return { lines, from, eof: end >= all.length };
 }
+
+// Whole-file contents as lines, for re-anchoring comments after the code moves.
+// rev === 'WORKTREE' reads from disk (what all/working modes show); otherwise
+// the blob at that revision.
+export async function readFileLines(repoRoot, { rev, path: filePath }) {
+  let content;
+  if (rev === 'WORKTREE') {
+    const abs = path.join(repoRoot, filePath);
+    if (!abs.startsWith(path.resolve(repoRoot) + path.sep)) return null; // traversal guard
+    content = await fs.readFile(abs, 'utf8').catch(() => null);
+  } else {
+    content = await git(repoRoot, ['show', `${rev}:${filePath}`]).catch(() => null);
+  }
+  if (content === null) return null; // file is gone at this revision
+  const lines = content.split('\n');
+  if (lines.length && lines[lines.length - 1] === '') lines.pop();
+  return lines;
+}
+
+/**
+ * Content hash of a file, so re-anchoring can skip files that have not changed
+ * since a comment was written. Uses git's own object id, matching what the diff
+ * machinery sees.
+ */
+export async function getBlobSha(repoRoot, { rev, path: filePath }) {
+  if (rev === 'WORKTREE') {
+    const abs = path.join(repoRoot, filePath);
+    if (!abs.startsWith(path.resolve(repoRoot) + path.sep)) return null;
+    const out = await git(repoRoot, ['hash-object', '--', abs]).catch(() => null);
+    return out ? out.trim() : null;
+  }
+  const out = await git(repoRoot, ['rev-parse', `${rev}:${filePath}`]).catch(() => null);
+  return out ? out.trim() : null;
+}

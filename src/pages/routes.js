@@ -12,6 +12,7 @@ import { getParticipant } from '../model/participants.js';
 import { listReviews, verdictSummary, getReview } from '../model/reviews.js';
 import * as threads from '../model/threads.js';
 import { listTimeline } from '../model/timeline.js';
+import { reanchorPull } from '../anchor/reanchor.js';
 
 const md = (text) => (text ? marked.parse(text) : '');
 
@@ -139,6 +140,15 @@ export function mountPages(app, db, { repoRoot, defaultBase = null } = {}) {
         defaultBase: pull.base_ref || defaultBase,
         defaultMode: pull.diff_mode || 'branch',
       });
+      // Opening the diff is exactly when stale line numbers would mislead, and
+      // the blob-sha check makes an unchanged tree almost free, so re-anchor
+      // here rather than making it something you have to remember to run.
+      await reanchorPull(db, {
+        repoRoot,
+        pullRequestId: pull.id,
+        rev: opts.diffMode === 'branch' ? 'HEAD' : 'WORKTREE',
+      });
+
       const built = await buildDiffView(repoRoot, opts);
       res.render('pr/files', {
         colorMode: opts.colorMode,

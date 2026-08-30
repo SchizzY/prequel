@@ -435,3 +435,25 @@
   text-decoration: none;
 }
 .pr-list-files:hover { color: var(--fgColor-accent, #0969da); }
+
+/* --- anchor drift ------------------------------------------------------- */
+
+.anchor-flag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border: 1px solid currentColor;
+}
+.anchor-outdated { color: var(--fgColor-attention, #9a6700); }
+.anchor-lost { color: var(--fgColor-danger, #cf222e); }
+
+/* A lost comment stays visible -- a human decides what to do with it -- but it
+   should not read as live, actionable work. */
+.finding.is-lost .finding-loc {
+  text-decoration: line-through;
+  color: var(--fgColor-muted);
+}
