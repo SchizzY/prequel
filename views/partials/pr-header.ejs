@@ -5,6 +5,29 @@
     request_changes: { label: 'requested changes', cls: 'verdict-changes', glyph: '✗' },
     comment: { label: 'commented', cls: 'verdict-comment', glyph: '💬' },
   };
+  // Octicons, inlined: an icon strip is what makes the header read as a PR
+  // rather than a page of text, and inlining keeps it to zero extra requests.
+  const ICON = {
+    pull: '<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"></path></svg>',
+    conversation: '<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path></svg>',
+    files: '<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8.75 1.75V5H12a.75.75 0 0 1 0 1.5H8.75v3.25a.75.75 0 0 1-1.5 0V6.5H4A.75.75 0 0 1 4 5h3.25V1.75a.75.75 0 0 1 1.5 0ZM4 13h8a.75.75 0 0 1 0 1.5H4A.75.75 0 0 1 4 13Z"></path></svg>',
+  };
+  ICON.commits =
+    '<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"></path></svg>';
+  const TAB_ICON = { conversation: ICON.conversation, commits: ICON.commits, files: ICON.files };
+
+  // The five-block bar GitHub puts next to +added −removed: how much of the
+  // change is one or the other, with the remainder left neutral.
+  const stat = typeof stats !== 'undefined' && stats ? stats : null;
+  const churn = stat ? stat.additions + stat.deletions : 0;
+  const share = (n) => (churn ? Math.min(5, Math.max(1, Math.round((n / churn) * 5))) : 0);
+  const green = stat && stat.additions ? share(stat.additions) : 0;
+  const red = stat && stat.deletions ? Math.min(5 - green, share(stat.deletions)) : 0;
+  const blocks = [
+    ...Array(green).fill('block-add'),
+    ...Array(red).fill('block-del'),
+    ...Array(Math.max(0, 5 - green - red)).fill('block-none'),
+  ];
 %>
 <header class="pr-header">
   <div class="pr-header-inner">
@@ -17,31 +40,64 @@
     </div>
 
     <div class="pr-status-line">
-      <span class="state-badge state-<%= pull.state %>"><%= STATE_LABEL[pull.state] || pull.state %></span>
-      <span class="pr-refs">
-        <span class="ref-pill"><%= pull.head_ref %></span>
-        <span class="ref-arrow">into</span>
-        <span class="ref-pill"><%= pull.base_ref %></span>
+      <span class="state-badge state-<%= pull.state %>">
+        <%- ICON.pull %><%= STATE_LABEL[pull.state] || pull.state %>
       </span>
-      <% if (verdicts && verdicts.length) { %>
-      <span class="verdict-list">
-        <% verdicts.forEach(function (v) { const info = VERDICT[v.verdict] || VERDICT.comment; %>
-          <span class="verdict <%= info.cls %>" title="<%= v.handle %> <%= info.label %>">
-            <span class="verdict-glyph"><%= info.glyph %></span><%= v.handle %>
-          </span>
+      <span class="pr-refs">
+        <%
+          // The base is stored on the PR, so this picker patches it rather than
+          // passing a query param around. Outside a git repo it stays a pill.
+          const refs = typeof branches !== 'undefined' && branches ? branches : null;
+          const known = refs ? refs.local.concat(refs.remote) : [];
+        %>
+        <% if (known.length) { %>
+        <span class="ref-select-wrap">
+          <select class="ref-pill ref-select pr-base-select"
+                  data-pr="<%= pull.number %>" data-current="<%= pull.base_ref %>"
+                  aria-label="Base branch" title="Branch this pull request merges into">
+            <% if (!known.includes(pull.base_ref)) { %>
+            <%# a base that no longer exists stays selectable, so the header cannot misreport it %>
+            <option value="<%= pull.base_ref %>" selected><%= pull.base_ref %></option>
+            <% } %>
+            <% [['Local', refs.local], ['Remote', refs.remote]].forEach(function (group) {
+                 const [label, list] = group;
+                 if (!list.length) return; %>
+            <optgroup label="<%= label %>">
+              <% list.forEach(function (ref) { %>
+              <option value="<%= ref %>"<%= ref === pull.base_ref ? ' selected' : '' %>><%= ref %></option>
+              <% }); %>
+            </optgroup>
+            <% }); %>
+          </select>
+        </span>
+        <% } else { %>
+        <span class="ref-pill"><%= pull.base_ref %></span>
+        <% } %>
+        <span class="ref-arrow">←</span>
+        <span class="ref-pill"><%= pull.head_ref %></span>
+      </span>
+    </div>
+
+    <div class="pr-tabs-row">
+      <nav class="pr-tabs" aria-label="Pull request sections">
+        <% tabs.forEach(function (tab) { %>
+          <a class="pr-tab<%= tab.id === active ? ' is-active' : '' %>"
+             href="<%= tab.href %>"
+             <%= tab.id === active ? 'aria-current="page"' : '' %>>
+            <%- TAB_ICON[tab.id] || '' %><%= tab.label %><span class="tab-count"><%= tab.count %></span>
+          </a>
         <% }); %>
+      </nav>
+
+      <% if (stat) { %>
+      <span class="diffstat" title="<%= stat.files %> changed <%= stat.files === 1 ? 'file' : 'files' %>">
+        <span class="summary-additions">+<%= stat.additions.toLocaleString('en-US') %></span>
+        <span class="summary-deletions">−<%= stat.deletions.toLocaleString('en-US') %></span>
+        <span class="diffstat-blocks" aria-hidden="true">
+          <% blocks.forEach(function (cls) { %><span class="<%= cls %>"></span><% }); %>
+        </span>
       </span>
       <% } %>
     </div>
-
-    <nav class="pr-tabs" aria-label="Pull request sections">
-      <% tabs.forEach(function (tab) { %>
-        <a class="pr-tab<%= tab.id === active ? ' is-active' : '' %>"
-           href="<%= tab.href %>"
-           <%= tab.id === active ? 'aria-current="page"' : '' %>>
-          <%= tab.label %><% if (tab.count) { %><span class="tab-count"><%= tab.count %></span><% } %>
-        </a>
-      <% }); %>
-    </nav>
   </div>
 </header>

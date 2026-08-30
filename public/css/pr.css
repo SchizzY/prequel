@@ -23,7 +23,7 @@
 }
 
 .pr-header-inner {
-  max-width: 1280px;
+  max-width: 1140px;
   margin: 0 auto;
   padding: 16px 16px 0;
 }
@@ -49,7 +49,7 @@
 
 .pr-heading {
   margin: 0;
-  font-size: 22px;
+  font-size: 32px;
   font-weight: 400;
   color: var(--fgColor-default);
 }
@@ -72,9 +72,9 @@
 .state-badge {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--fgColor-onEmphasis);
   text-transform: capitalize;
@@ -121,7 +121,8 @@
 }
 .pr-tab.is-active {
   font-weight: 600;
-  border-bottom-color: var(--borderColor-accent-emphasis, #fd8c73);
+  /* the tab underline is its own token: accent-emphasis is blue in dark mode */
+  border-bottom-color: var(--underlineNav-borderColor-active, #fd8c73);
 }
 
 .tab-count {
@@ -141,7 +142,7 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  max-width: 1280px;
+  max-width: 1140px;
   margin: 0 auto;
   padding: 10px 16px;
   font-size: 13px;
@@ -168,11 +169,15 @@
   flex-direction: column;
   gap: 16px;
 }
-/* the vertical rail GitHub runs down the conversation */
+/*
+  The rail is not the avatar column. It runs behind the cards, through the
+  event markers, so it only shows in the gaps between one event and the next
+  -- the avatars sit clear of it, out to the left.
+*/
 .timeline::before {
   content: '';
   position: absolute;
-  left: 15px;
+  left: 69px;
   top: 8px;
   bottom: 8px;
   width: 2px;
@@ -184,7 +189,7 @@
 .tl-note {
   position: relative;
   z-index: 1;
-  margin-left: 44px;
+  margin-left: 56px;
 }
 
 .tl-card {
@@ -197,7 +202,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 16px;
   background: var(--bgColor-muted, #f6f8fa);
   border-bottom: 1px solid var(--borderColor-default);
   border-radius: 6px 6px 0 0;
@@ -211,10 +216,10 @@
 
 .tl-author { font-weight: 600; color: var(--fgColor-default); }
 .tl-verb { color: var(--fgColor-muted); }
-.tl-time { margin-left: auto; color: var(--fgColor-muted); font-size: 12px; }
+.tl-time { color: var(--fgColor-muted); font-size: 12px; }
 
 .tl-card-body {
-  padding: 12px;
+  padding: 16px;
   font-size: 14px;
   line-height: 1.5;
   color: var(--fgColor-default);
@@ -226,17 +231,17 @@
 /* avatars sit on the rail */
 .avatar {
   position: absolute;
-  left: -44px;
-  top: 4px;
-  width: 32px;
-  height: 32px;
+  left: -56px;
+  top: 0;
+  width: 40px;
+  height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: var(--avatar-color);
   color: #fff;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   border: 2px solid var(--bgColor-default);
 }
@@ -249,16 +254,32 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  margin-left: 96px;
   padding: 4px 0;
   font-size: 13px;
   color: var(--fgColor-muted);
 }
+/* an event without a card still marks its place on the rail */
+.tl-note::before {
+  content: '';
+  position: absolute;
+  left: -32px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--borderColor-muted, #d8dee4);
+  border: 3px solid var(--bgColor-default);
+}
+/* the actor rides along inside the line of text, not out on the rail */
 .tl-note .avatar {
-  width: 24px;
-  height: 24px;
-  left: -40px;
-  top: 0;
+  position: static;
+  flex: none;
+  width: 20px;
+  height: 20px;
   font-size: 11px;
+  border-width: 0;
 }
 .tl-note .tl-time { margin-left: 6px; }
 
@@ -316,23 +337,28 @@
 
 /* --- composers ---------------------------------------------------------- */
 
-.comment-form,
-.reply-form {
-  margin-top: 16px;
-  margin-left: 44px;
+/* A new comment on the pull request is its own card under the timeline, so it
+   keeps the same 16px gap the timeline puts between events. */
+.comment-form {
+  margin: 16px 0 0 56px;
+  padding: 12px;
   border: 1px solid var(--borderColor-default);
   border-radius: 6px;
   background: var(--bgColor-default);
-  padding: 10px;
 }
+
+/* The footer of a thread card: it has to close the card, so it carries the
+   card's bottom corners and the muted fill that says "this part is a form". */
 .reply-form {
-  margin: 0;
-  border: 0;
-  border-top: 1px solid var(--borderColor-default);
-  border-radius: 0;
   display: flex;
   gap: 8px;
   align-items: flex-start;
+  margin: 0;
+  padding: 12px;
+  border: 0;
+  border-top: 1px solid var(--borderColor-default);
+  border-radius: 0 0 5px 5px;
+  background: var(--bgColor-muted, #f6f8fa);
 }
 
 .comment-form textarea,
@@ -343,7 +369,7 @@
   font: inherit;
   font-size: 14px;
   color: var(--fgColor-default);
-  background: var(--bgColor-inset, #f6f8fa);
+  background: var(--bgColor-default);
   border: 1px solid var(--borderColor-default);
   border-radius: 6px;
   resize: vertical;
@@ -379,63 +405,6 @@
 .comment-form button:disabled,
 .reply-form button:disabled { opacity: 0.6; cursor: default; }
 
-/* --- PR index ----------------------------------------------------------- */
-
-.pr-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--borderColor-default);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.pr-list-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--borderColor-default);
-  background: var(--bgColor-default);
-}
-.pr-list-item:last-child { border-bottom: 0; }
-
-.pr-list-main { flex: 1; min-width: 0; }
-
-.pr-list-title {
-  display: block;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--fgColor-default);
-  text-decoration: none;
-}
-.pr-list-title:hover { color: var(--fgColor-accent, #0969da); }
-
-.pr-list-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--fgColor-muted);
-}
-
-.pr-list-open {
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--bgColor-attention-muted, #fff8c5);
-  color: var(--fgColor-attention, #9a6700);
-}
-
-.pr-list-files {
-  flex: none;
-  font-size: 12px;
-  color: var(--fgColor-muted);
-  text-decoration: none;
-}
-.pr-list-files:hover { color: var(--fgColor-accent, #0969da); }
-
 /* --- anchor drift ------------------------------------------------------- */
 
 .anchor-flag {
@@ -456,4 +425,891 @@
 .finding.is-lost .finding-loc {
   text-decoration: line-through;
   color: var(--fgColor-muted);
+}
+
+/* --- header icons and the +/- summary ----------------------------------- */
+
+.octicon { fill: currentColor; flex: none; }
+.state-badge .octicon { margin-right: 5px; }
+.pr-tab .octicon { margin-right: 6px; color: var(--fgColor-muted); vertical-align: text-bottom; }
+.pr-tab.is-active .octicon { color: var(--fgColor-default); }
+
+.pr-tabs-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.diffstat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.diffstat-blocks {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 2px;
+}
+.diffstat-blocks span {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--bgColor-neutral-muted, #eaeef2);
+}
+.diffstat-blocks .block-add { background: var(--bgColor-success-emphasis, #1f883d); }
+.diffstat-blocks .block-del { background: var(--bgColor-danger-emphasis, #cf222e); }
+
+/* --- conversation layout ------------------------------------------------ */
+
+/* The conversation is one column of prose plus the rail, matching the width
+   the header and toolbar use so nothing shifts between tabs. */
+.pr-main-wide { max-width: 1140px; }
+
+.pr-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 296px;
+  gap: 24px;
+  align-items: start;
+}
+.pr-conversation { min-width: 0; }
+
+/* GitHub folds the rail under the conversation at this width; so do we. */
+@media (max-width: 1012px) {
+  .pr-layout { grid-template-columns: minmax(0, 1fr); }
+  .pr-sidebar { order: -1; }
+}
+
+/* Who is speaking, at the right end of the comment head. */
+.tl-badge {
+  margin-left: auto;
+  padding: 0 7px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--fgColor-muted);
+}
+
+/* --- sidebar ------------------------------------------------------------ */
+
+.pr-sidebar {
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+
+.sidebar-section {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--borderColor-muted, #d8dee4);
+}
+.sidebar-section:first-child { padding-top: 4px; }
+.sidebar-section:last-child { border-bottom: 0; }
+
+.sidebar-heading {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fgColor-muted);
+}
+
+.sidebar-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar-person {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+/* In the rail an avatar is inline, not pinned to the timeline gutter. */
+.pr-sidebar .avatar {
+  position: static;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  border-width: 0;
+}
+
+.sidebar-handle { font-weight: 600; color: var(--fgColor-default); }
+.sidebar-note { margin: 0; color: var(--fgColor-muted); }
+.sidebar-empty { margin: 0; color: var(--fgColor-muted); }
+
+.verdict-mark { margin-left: auto; font-weight: 600; }
+
+.sidebar-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+.sidebar-labels .sev { text-decoration: none; }
+
+.sidebar-avatars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+}
+
+.sidebar-repo .repo-path { display: block; font-size: 11px; }
+
+/* --- rendered markdown -------------------------------------------------- */
+/* GitHub's markdown body rules, trimmed to what a PR description and a
+   comment actually use. Without these the browser defaults take over and a
+   description stops looking like the rest of the page. */
+
+.markdown {
+  font-size: 14px;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: 24px 0 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.markdown h1 {
+  font-size: 2em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--borderColor-muted, #d8dee4);
+}
+.markdown h2 {
+  font-size: 1.5em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--borderColor-muted, #d8dee4);
+}
+.markdown h3 { font-size: 1.25em; }
+.markdown h4 { font-size: 1em; }
+.markdown h5 { font-size: 0.875em; }
+.markdown h6 { font-size: 0.85em; color: var(--fgColor-muted); }
+
+.markdown p,
+.markdown blockquote,
+.markdown ul,
+.markdown ol,
+.markdown dl,
+.markdown table,
+.markdown pre {
+  margin: 0 0 16px;
+}
+
+.markdown ul,
+.markdown ol { padding-left: 2em; }
+.markdown li + li { margin-top: 0.25em; }
+.markdown li > p { margin-top: 16px; }
+
+.markdown a { color: var(--fgColor-accent, #0969da); text-decoration: none; }
+.markdown a:hover { text-decoration: underline; }
+
+.markdown code {
+  padding: 0.2em 0.4em;
+  font-size: 85%;
+  white-space: break-spaces;
+  background: var(--bgColor-neutral-muted, #eaeef2);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+.markdown pre {
+  padding: 16px;
+  overflow: auto;
+  font-size: 85%;
+  line-height: 1.45;
+  background: var(--bgColor-muted, #f6f8fa);
+  border-radius: 6px;
+}
+.markdown pre code {
+  padding: 0;
+  font-size: 100%;
+  background: transparent;
+}
+
+.markdown blockquote {
+  padding: 0 1em;
+  color: var(--fgColor-muted);
+  border-left: 0.25em solid var(--borderColor-default);
+}
+
+.markdown hr {
+  height: 0.25em;
+  padding: 0;
+  margin: 24px 0;
+  background: var(--borderColor-default);
+  border: 0;
+}
+
+.markdown table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+}
+.markdown th,
+.markdown td {
+  padding: 6px 13px;
+  border: 1px solid var(--borderColor-default);
+}
+.markdown tr:nth-child(2n) { background: var(--bgColor-muted, #f6f8fa); }
+
+.markdown img { max-width: 100%; }
+
+/* The arrow GitHub points from the avatar into the head of a comment. */
+.tl-card-head { position: relative; }
+.tl-card-head::before,
+.tl-card-head::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  width: 0;
+  height: 0;
+  border: 8px solid transparent;
+  border-left-width: 0;
+}
+.tl-card-head::before {
+  left: -8px;
+  border-right-color: var(--borderColor-default);
+}
+.tl-card-head::after {
+  left: -7px;
+  border-right-color: var(--bgColor-muted, #f6f8fa);
+}
+
+/* --- commits in the timeline -------------------------------------------- */
+
+.commit-list {
+  position: relative;
+  z-index: 1;
+  list-style: none;
+  margin: -8px 0 0 96px;
+  padding: 0;
+}
+
+.commit-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+/* a node on the rail, the way GitHub marks each commit */
+.commit-row::before {
+  content: '';
+  position: absolute;
+  left: -30px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--borderColor-default);
+  border: 2px solid var(--bgColor-default);
+}
+
+.commit-row .avatar {
+  position: static;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  border-width: 0;
+}
+
+.commit-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 12px;
+  color: var(--fgColor-accent, #0969da);
+}
+
+.commit-sha {
+  margin-left: auto;
+  padding-left: 8px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+
+/* --- commits tab -------------------------------------------------------- */
+
+.commit-group-head {
+  margin: 16px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fgColor-default);
+}
+.commit-group-head:first-child { margin-top: 0; }
+
+.commit-cards {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.commit-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--bgColor-default);
+  border-bottom: 1px solid var(--borderColor-default);
+}
+.commit-card:last-child { border-bottom: 0; }
+
+.commit-card-main { min-width: 0; flex: 1; }
+
+.commit-card-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fgColor-default);
+}
+
+.commit-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+.commit-card-meta .avatar {
+  position: static;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  border-width: 0;
+}
+.commit-author { font-weight: 600; color: var(--fgColor-default); }
+
+.commit-card-sha {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+
+/* --- pull request index -------------------------------------------------- */
+
+/* GitHub keeps this page quiet: a line saying where you are, a toolbar, and
+   then a Box that is nothing but the work. Nothing here is a hero. */
+
+.index-header {
+  border-bottom: 1px solid var(--borderColor-default);
+  background: var(--bgColor-inset, var(--bgColor-muted, #f6f8fa));
+}
+
+.index-header-inner {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  /* Centre, not baseline: the line mixes a monospace path, a sans heading and
+     an icon, and three different baselines do not sit on one line. */
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  line-height: 20px;
+}
+
+.index-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fgColor-muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.index-crumb-sep {
+  color: var(--fgColor-muted);
+  font-size: 14px;
+}
+.index-crumb .octicon { color: var(--fgColor-muted); }
+
+.index-crumb-path {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+.index-heading {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--fgColor-default);
+}
+
+.index-main {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 16px 16px 60px;
+}
+
+.index-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.filter-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.filter-input .octicon {
+  position: absolute;
+  left: 8px;
+  color: var(--fgColor-muted);
+  pointer-events: none;
+}
+.filter-input input {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px 0 30px;
+  font: inherit;
+  color: var(--fgColor-default);
+  background: var(--bgColor-default);
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.filter-input input:focus {
+  outline: none;
+  border-color: var(--borderColor-accent-emphasis, #0969da);
+  box-shadow: 0 0 0 3px var(--shadow-focus, rgba(9, 105, 218, 0.3));
+}
+
+/* --- the Box ------------------------------------------------------------- */
+
+.box {
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background: var(--bgColor-default);
+}
+
+.box-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--bgColor-muted, #f6f8fa);
+  border-bottom: 1px solid var(--borderColor-default);
+  border-radius: 6px 6px 0 0;
+  font-size: 14px;
+}
+
+.box-states {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.state-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  font: inherit;
+  border: 0;
+  background: none;
+  color: var(--fgColor-muted);
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.state-filter:hover { color: var(--fgColor-default); }
+.state-filter.is-active { color: var(--fgColor-default); font-weight: 600; }
+.state-filter .octicon { color: currentColor; }
+
+.box-header-note {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+
+.box-blank {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--fgColor-muted);
+}
+.box-blank .octicon {
+  width: 24px;
+  height: 24px;
+  color: var(--fgColor-muted);
+}
+.box-blank-title {
+  margin: 8px 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fgColor-default);
+}
+.box-blank-sub { margin: 0; font-size: 14px; }
+
+/* --- rows ---------------------------------------------------------------- */
+
+.pr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pr-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--borderColor-muted, #d1d9e0);
+  overflow: hidden;
+  transition: height 180ms var(--ease-out), opacity 120ms ease,
+    padding 180ms var(--ease-out), background-color 120ms ease;
+}
+.pr-list-item:last-child { border-bottom: 0; }
+.pr-list-item:hover { background: var(--bgColor-muted, #f6f8fa); }
+.pr-list-item[hidden] { display: none; }
+.pr-list-item.is-leaving {
+  height: 0 !important;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+}
+
+/* The state lives in the icon, the way it does on GitHub, rather than in a
+   badge competing with the title. */
+.pr-icon {
+  display: flex;
+  padding-top: 2px;
+  flex: none;
+}
+.pr-icon.state-open .octicon { color: var(--fgColor-success, #1a7f37); }
+.pr-icon.state-draft .octicon { color: var(--fgColor-muted); }
+.pr-icon.state-merged .octicon { color: var(--fgColor-done, #8250df); }
+.pr-icon.state-closed .octicon { color: var(--fgColor-danger, #cf222e); }
+
+.pr-list-main { flex: 1; min-width: 0; }
+
+.pr-list-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--fgColor-default);
+  text-decoration: none;
+}
+.pr-list-title:hover { color: var(--fgColor-accent, #0969da); }
+
+.pr-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+
+.pr-list-refs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pr-list-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding-top: 2px;
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+
+.pr-open-count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bgColor-attention-muted, #fff8c5);
+  color: var(--fgColor-attention, #9a6700);
+}
+
+.pr-threads {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fgColor-muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+.pr-threads:hover { color: var(--fgColor-accent, #0969da); }
+
+.pr-list-drop {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--fgColor-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease, transform 160ms var(--ease-out);
+}
+.pr-list-item:hover .pr-list-drop,
+.pr-list-drop:focus-visible { opacity: 1; }
+.pr-list-drop:hover { color: var(--fgColor-danger, #cf222e); }
+.pr-list-drop:active { transform: scale(0.94); }
+
+/* Which repo a pull request came from, shown once more than one is in play. */
+.repo-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--borderColor-default);
+  color: var(--fgColor-muted);
+}
+.repo-tag .octicon { width: 12px; height: 12px; }
+
+/* --- opening a pull request ---------------------------------------------- */
+
+/* The built-in easings are too soft to read as intentional; this is the
+   ease-out everything here leaves and settles on. */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* GitHub's compare page, in the space above the list: a bar that says which
+   two branches (of which repo) are being reviewed, then the form. */
+
+.compare {
+  margin-bottom: 16px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background: var(--bgColor-default);
+  /* Opened rarely, so it earns an entrance -- and leaves faster than it
+     arrives, the way a dismissal should. */
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
+}
+.compare[data-open] {
+  opacity: 1;
+  transform: none;
+  transition-duration: 180ms;
+}
+
+.compare-head {
+  padding: 16px;
+  border-bottom: 1px solid var(--borderColor-default);
+}
+
+.compare-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.compare-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+
+.compare-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: var(--bgColor-muted, #f6f8fa);
+  border-bottom: 1px solid var(--borderColor-default);
+}
+
+.compare-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.compare-group > .octicon { color: var(--fgColor-muted); }
+
+.compare-arrow { color: var(--fgColor-muted); }
+
+/* The pickers are real <select>s -- the platform's own menu, keyboard
+   behaviour and type-ahead for free -- wearing GitHub's button. */
+.ref-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 24px 3px 8px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background: var(--bgColor-default);
+  font-size: 12px;
+  color: var(--fgColor-muted);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.ref-picker:hover { background: var(--bgColor-muted, #f6f8fa); }
+.ref-picker:focus-within {
+  border-color: var(--borderColor-accent-emphasis, #0969da);
+  box-shadow: 0 0 0 3px var(--shadow-focus, rgba(9, 105, 218, 0.3));
+}
+
+/* The caret sits on the wrapper so the select can shrink to its value. */
+.ref-picker::after {
+  content: "";
+  position: absolute;
+  right: 9px;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  border: 4px solid transparent;
+  border-top-color: var(--fgColor-muted);
+  transform: translateY(2px);
+}
+
+.ref-picker select {
+  appearance: none;
+  max-width: 220px;
+  field-sizing: content;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fgColor-default);
+  cursor: pointer;
+}
+.ref-picker select:focus { outline: none; }
+.ref-picker label { cursor: pointer; }
+
+/* Where the chosen repo lives, and why the button is off when it is. */
+.compare-status {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--borderColor-default);
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+.compare-status:empty { display: none; }
+.compare-status[data-kind="warn"] { color: var(--fgColor-attention, #9a6700); }
+.compare-status[data-kind="error"] { color: var(--fgColor-danger, #cf222e); }
+
+.compare-form {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+}
+
+.compare-input {
+  width: 100%;
+  padding: 5px 12px;
+  font: inherit;
+  color: var(--fgColor-default);
+  background: var(--bgColor-default);
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.compare-input:focus {
+  outline: none;
+  border-color: var(--borderColor-accent-emphasis, #0969da);
+  box-shadow: 0 0 0 3px var(--shadow-focus, rgba(9, 105, 218, 0.3));
+}
+.compare-input-title { font-size: 16px; padding: 8px 12px; }
+textarea.compare-input { resize: vertical; min-height: 100px; }
+
+.compare-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* --- buttons ------------------------------------------------------------- */
+
+/* Pressing anything should be felt, not just seen. */
+.btn { transition: transform 160ms var(--ease-out), background-color 120ms ease; }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+
+.btn-sm { padding: 3px 10px; }
+
+/* The two places a button stands next to an input or carries a form: GitHub's
+   32px control height, so nothing in the row is a different size. */
+.index-toolbar .btn,
+.compare-actions .btn {
+  height: 32px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+/* Everything in the compare bar is one control height, whether it is a button
+   or a select wearing one. */
+.compare-bar .btn,
+.compare-bar .ref-picker {
+  height: 28px;
+}
+.compare-bar .btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+}
+.btn-danger { color: var(--fgColor-muted); }
+.btn-danger:hover {
+  color: var(--fgColor-onEmphasis, #fff);
+  background: var(--bgColor-danger-emphasis, #cf222e);
+  border-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compare,
+  .pr-list-item,
+  .pr-list-drop,
+  .btn {
+    transition-duration: 1ms;
+  }
+  .btn:active:not(:disabled),
+  .pr-list-drop:active { transform: none; }
 }

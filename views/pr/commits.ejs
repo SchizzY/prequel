@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" data-color-mode="<%= colorMode %>" data-light-theme="light" data-dark-theme="dark">
+<head>
+  <%- include('../partials/head', { title: 'Commits · ' + pull.title }) %>
+</head>
+<body data-me="<%= me.handle %>">
+  <%- include('../partials/pr-header') %>
+
+  <main class="pr-main pr-main-wide">
+    <% if (!groups.length) { %>
+      <div class="notice notice-info">
+        Nothing to show — <code><%= pull.head_ref %></code> has no commits that
+        <code><%= pull.base_ref %></code> does not already have.
+      </div>
+    <% } %>
+
+    <% groups.forEach(function (group) { %>
+      <h2 class="commit-group-head"><%= group.label %></h2>
+      <ul class="commit-cards">
+        <% group.commits.forEach(function (c) { %>
+          <li class="commit-card">
+            <div class="commit-card-main">
+              <span class="commit-card-title" title="<%= c.subject %>"><%= c.subject %></span>
+              <span class="commit-card-meta">
+                <%- include('../partials/avatar', { handle: c.author, color: null, kind: 'human' }) %>
+                <span class="commit-author"><%= c.author %></span>
+                committed
+                <time class="tl-time" datetime="<%= c.date %>"><%= c.date %></time>
+              </span>
+            </div>
+            <span class="commit-card-sha" title="<%= c.sha %>"><%= c.short %></span>
+          </li>
+        <% }); %>
+      </ul>
+    <% }); %>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="/static/js/base-picker.js"></script>
+  <script src="/static/js/pr.js"></script>
+</body>
+</html>

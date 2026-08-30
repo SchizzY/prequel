@@ -72,7 +72,7 @@ describe('relocate', () => {
   });
 
   test('without a snapshot, only the line range can be checked', () => {
-    // comments migrated from the old store often have no snapshot
+    // a comment can be filed without a snapshot
     assert.equal(relocate(FILE, [], 3).anchorState, 'current');
     assert.equal(relocate(FILE, null, 3).anchorState, 'current');
     assert.equal(relocate(FILE, [], 99).anchorState, 'lost', 'past the end of the file');

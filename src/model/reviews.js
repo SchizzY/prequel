@@ -75,7 +75,7 @@ export function verdictSummary(db, pullRequestId) {
   return plainAll(
     db
       .prepare(
-        `SELECT p.handle, p.kind, r.verdict, r.submitted_at
+        `SELECT p.handle, p.kind, p.color, r.verdict, r.submitted_at
          FROM review r
          JOIN participant p ON p.id = r.participant_id
          WHERE r.pull_request_id = ? AND r.state = 'submitted'

@@ -21,18 +21,23 @@ export function diffOptions(query, { defaultBase = null, defaultMode = 'working'
   };
 }
 
-export async function buildDiffView(repoRoot, { base, diffMode, view }) {
+export async function buildDiffView(repoRoot, { base, diffMode, view, head: headRef = null }) {
   let diff;
   let head;
   let resolvedBase;
   let error = null;
+  // Where the new side is read from. A PR about a branch that is not checked
+  // out reads from that branch instead of the working tree; getDiff decides,
+  // and says so, so the diff and the context it expands cannot disagree.
+  let rev = repoRoot && diffMode === 'branch' ? 'HEAD' : 'WORKTREE';
 
   if (repoRoot) {
     try {
-      const result = await getDiff(repoRoot, { base, mode: diffMode });
+      const result = await getDiff(repoRoot, { base, mode: diffMode, head: headRef });
       diff = parseDiff(result.patch);
       head = result.head;
       resolvedBase = result.base;
+      rev = result.mode === 'branch' ? result.rev : 'WORKTREE';
     } catch (err) {
       error = err.message;
     }
@@ -49,11 +54,8 @@ export async function buildDiffView(repoRoot, { base, diffMode, view }) {
   annotateWordDiffs(diff); // intra-line changed ranges (before highlighting)
   await highlightDiff(diff); // attaches per-line highlighted HTML in place
 
-  // Which revision the "new" side comes from, for context expansion: branch
-  // mode diffs against HEAD; all/working show the working tree.
-  const rev = repoRoot && diffMode === 'branch' ? 'HEAD' : 'WORKTREE';
   const { filesHtml, summary } = renderDiff(diff, { view, rev });
   const treeHtml = diff.files.length ? renderFileTree(diff) : '';
 
-  return { diff, head, base: resolvedBase, error, filesHtml, treeHtml, summary };
+  return { diff, head, base: resolvedBase, error, filesHtml, treeHtml, summary, rev };
 }

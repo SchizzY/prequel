@@ -12,6 +12,7 @@ import { createServer } from '../src/server.js';
 let base;
 let server;
 let repoDir;
+let otherDir;
 
 // A real git repo, so the Files tab has an actual diff to render.
 function makeRepo() {
@@ -100,10 +101,12 @@ before(async () => {
 
 after(() => {
   server?.close();
-  try {
-    fs.rmSync(repoDir, { recursive: true, force: true });
-  } catch {
-    /* windows may still hold the db file */
+  for (const dir of [repoDir, otherDir]) {
+    try {
+      if (dir) fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* windows may still hold the db file */
+    }
   }
 });
 
@@ -155,13 +158,73 @@ test('the Conversation tab renders description, reviews and discussion', async (
 
   // and a composer to add to it
   assert.match(html, /id="pr-comment-form"/);
+  // the composer posts as the human the store already knows, not a hardcoded 'user'
+  assert.match(html, /<body data-me="cahill">/);
 });
+
+// The tab label now follows an icon, so match the whole anchor rather than
+// what sits immediately after the opening tag.
+const activeTab = (html) => (html.match(/<a class="pr-tab is-active"[\s\S]*?<\/a>/) || [''])[0];
 
 test('the tab strip carries counts and marks the active tab', async () => {
   const { html } = await get('/pr/1');
-  assert.match(html, /class="pr-tab is-active"[^>]*>\s*Conversation/);
-  assert.match(html, /Files changed<span class="tab-count">2<\/span>/);
+  assert.match(activeTab(html), /Conversation/);
+  // Files changed counts the files, the way GitHub's does -- the fixture
+  // touches one, and the two threads written about it are shown per file.
+  assert.match(html, /Files changed<span class="tab-count">1<\/span>/);
   assert.match(html, /Conversation<span class="tab-count">1<\/span>/);
+
+  // and the same number on the tab whichever page you are standing on
+  const onFiles = await get('/pr/1/files');
+  assert.match(onFiles.html, /Files changed<span class="tab-count">1<\/span>/);
+});
+
+test('the conversation page carries the details rail and the diff summary', async () => {
+  const { html } = await get('/pr/1');
+
+  // reviewers, with the verdict each one left
+  assert.match(html, /Reviewers/);
+  assert.match(html, /class="verdict-mark verdict-changes"/);
+  assert.match(html, /class="verdict-mark verdict-approve"/);
+
+  // the findings raised, by severity, and who is on the hook for them
+  assert.match(html, /Assignees/);
+  assert.match(html, /Findings/);
+  assert.match(html, /3 open · 0 resolved/);
+
+  // everyone who has spoken: author, both agents
+  assert.match(html, /3 participants/);
+
+  // the header's +/- summary, which this page has no diff of its own to count
+  assert.match(html, /class="summary-additions">\+2</);
+  assert.match(html, /class="summary-deletions">−1</);
+});
+
+test('the header picks the base branch, and the choice sticks to the PR', async () => {
+  const before = await get('/pr/1');
+  assert.match(before.html, /class="ref-pill ref-select pr-base-select"/);
+  // the branches this repo actually has, with the PR's own base selected
+  assert.match(before.html, /<option value="main" selected>main<\/option>/);
+  assert.match(before.html, /<option value="feature">feature<\/option>/);
+
+  const patch = await fetch(`${base}/api/pulls/1`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ baseRef: 'feature' }),
+  });
+  assert.equal(patch.status, 200);
+  assert.equal((await patch.json()).pull.base_ref, 'feature');
+
+  // and the page now reads it back, rather than the base it was created with
+  const after = await get('/pr/1');
+  assert.match(after.html, /<option value="feature" selected>feature<\/option>/);
+
+  // put it back: the rest of the suite diffs against main
+  await fetch(`${base}/api/pulls/1`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ baseRef: 'main' }),
+  });
 });
 
 test('the Files tab renders the diff under the same header', async () => {
@@ -170,7 +233,7 @@ test('the Files tab renders the diff under the same header', async () => {
 
   // shared chrome
   assert.match(html, /Change b and add c/);
-  assert.match(html, /class="pr-tab is-active"[^>]*>\s*Files changed/);
+  assert.match(activeTab(html), /Files changed/);
 
   // the actual diff: the PR defaults to branch mode, so the committed change
   // against main is what renders
@@ -207,4 +270,88 @@ test('the original single-page route still renders', async () => {
   assert.match(html, /class="pr-title">Files changed/);
   assert.match(html, /data-path="app\.js"/);
   assert.match(text(html), /const c = 4;/);
+});
+
+// --- pull requests from another repo on disk -----------------------------
+// The picker adds repos after the server is running, so a PR is not
+// necessarily about the directory prequel was launched in -- nor about the
+// branch that directory happens to be standing on.
+
+const send = async (method, url, body) => {
+  const res = await fetch(base + url, {
+    method,
+    headers: body ? { 'content-type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return { status: res.status, ...(await res.json().catch(() => ({}))) };
+};
+
+test('a folder is added by path, resolved to the repo root', async () => {
+  otherDir = makeRepo();
+  // Left on main: the PR below is about a branch this checkout is not on.
+  execFileSync('git', ['-C', otherDir, 'checkout', '-q', 'main'], { stdio: 'pipe' });
+  fs.mkdirSync(path.join(otherDir, 'src'), { recursive: true });
+
+  // Pointing at a subdirectory is enough: it resolves to the repo root, which
+  // is what makes the folder dialog usable -- you pick the folder you were
+  // looking at, not the one with .git in it.
+  const added = await send('POST', '/api/repos', { path: path.join(otherDir, 'src') });
+  assert.equal(added.status, 200);
+  assert.equal(added.repo.root_path.replace(/\\/g, '/'), otherDir.replace(/\\/g, '/'));
+  assert.ok(added.branches.local.includes('feature'));
+  assert.equal(added.head, 'main');
+
+  const repos = await send('GET', '/api/repos');
+  assert.equal(repos.repos.length, 2);
+  assert.ok(repos.repos.some((r) => r.home));
+
+  // A folder without git in it is refused, with the path in the message.
+  const nope = await send('POST', '/api/repos', { path: os.tmpdir() });
+  assert.equal(nope.status, 400);
+  assert.match(nope.error, /not a git repository/);
+});
+
+test('a PR in the added repo diffs its own branch, not this checkout', async () => {
+  const created = await send('POST', '/api/pulls', {
+    handle: 'cahill',
+    repoPath: otherDir,
+    title: 'Work from the other repo',
+    baseRef: 'main',
+    headRef: 'feature',
+  });
+  assert.equal(created.status, 200);
+  const number = created.pull.number;
+  assert.notEqual(number, 1, 'numbers do not restart in a second repo');
+
+  // main is checked out there, so this diff can only come from reading the
+  // branch the PR names.
+  const files = await get(`/pr/${number}/files`);
+  assert.equal(files.status, 200);
+  assert.match(text(files.html), /const c = 4;/);
+
+  // and the index labels which repo it came from
+  const index = await get('/pulls');
+  assert.match(index.html, /class="repo-tag"/);
+  assert.match(index.html, /Work from the other repo/);
+});
+
+test('a pull request can be deleted from the list', async () => {
+  const before = await send('GET', '/api/pulls');
+  const doomed = before.pulls.find((p) => p.title === 'Work from the other repo');
+
+  const removed = await send('DELETE', `/api/pulls/${doomed.number}`);
+  assert.equal(removed.status, 200);
+  assert.equal(removed.ok, true);
+
+  const after = await send('GET', '/api/pulls');
+  assert.equal(after.pulls.length, before.pulls.length - 1);
+  assert.equal((await get(`/pr/${doomed.number}`)).status, 404);
+
+  // With its last PR gone the repo can be forgotten too; the one prequel runs
+  // in stays put.
+  const repos = await send('GET', '/api/repos');
+  const other = repos.repos.find((r) => !r.home);
+  assert.equal((await send('DELETE', `/api/repos/${other.id}`)).status, 200);
+  const home = (await send('GET', '/api/repos')).repos[0];
+  assert.equal((await send('DELETE', `/api/repos/${home.id}`)).status, 400);
 });

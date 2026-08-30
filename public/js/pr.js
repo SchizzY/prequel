@@ -3,9 +3,9 @@
 (function () {
   const CLIENT_ID = Math.random().toString(36).slice(2);
 
-  // Who the browser posts as. The human is always 'user' here; agents identify
-  // themselves over the API instead.
-  const ME = 'user';
+  // Who the browser posts as. The server picks the human participant and
+  // stamps it on <body>; agents identify themselves over the API instead.
+  const ME = document.body.dataset.me;
 
   const json = () => ({ 'content-type': 'application/json', 'x-prequel-client': CLIENT_ID });
 

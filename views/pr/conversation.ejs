@@ -3,130 +3,165 @@
 <head>
   <%- include('../partials/head', { title: pull.title + ' #' + pull.number }) %>
 </head>
-<body>
+<body data-me="<%= me.handle %>">
   <%- include('../partials/pr-header') %>
 
-  <main class="pr-main">
-    <div class="timeline">
-      <!-- The description: the PR's own opening statement. -->
-      <article class="tl-card">
-        <div class="tl-card-head">
-          <%- include('../partials/avatar', { handle: author.handle, color: author.color, kind: author.kind }) %>
-          <span class="tl-author"><%= author.handle %></span>
-          <span class="tl-verb">opened this pull request</span>
-          <time class="tl-time" datetime="<%= pull.created_at %>"><%= pull.created_at %></time>
-        </div>
-        <div class="tl-card-body markdown">
-          <% if (descriptionHtml) { %><%- descriptionHtml %><% } else { %>
-            <p class="tl-empty">No description provided.</p>
-          <% } %>
-        </div>
-      </article>
-
-      <% feed.forEach(function (item) { %>
-        <% if (item.kind === 'opened') { /* already shown as the description */ } %>
-
-        <% if (item.kind === 'review_submitted' && item.review) { %>
-          <article class="tl-card tl-review verdict-<%= item.review.verdict %>">
+  <main class="pr-main pr-main-wide">
+    <div class="pr-layout">
+      <div class="pr-conversation">
+        <div class="timeline">
+          <!-- The description: the PR's own opening statement. -->
+          <article class="tl-card">
             <div class="tl-card-head">
-              <%- include('../partials/avatar', { handle: item.handle, color: item.color, kind: item.participant_kind }) %>
-              <span class="tl-author"><%= item.handle %></span>
-              <span class="tl-verb">
-                <% if (item.review.verdict === 'approve') { %>approved these changes<% } %>
-                <% if (item.review.verdict === 'request_changes') { %>requested changes<% } %>
-                <% if (item.review.verdict === 'comment') { %>reviewed<% } %>
-              </span>
-              <time class="tl-time" datetime="<%= item.created_at %>"><%= item.created_at %></time>
+              <%- include('../partials/avatar', { handle: author.handle, color: author.color, kind: author.kind }) %>
+              <span class="tl-author"><%= author.handle %></span>
+              <span class="tl-verb">opened this pull request</span>
+              <time class="tl-time" datetime="<%= pull.created_at %>"><%= pull.created_at %></time>
+              <span class="tl-badge">Author</span>
             </div>
-            <% if (item.review.bodyHtml) { %>
-              <div class="tl-card-body markdown"><%- item.review.bodyHtml %></div>
-            <% } %>
-            <% if (item.threads && item.threads.length) { %>
-              <ul class="review-findings">
-                <% item.threads.forEach(function (t) { %>
-                  <li class="finding<%= t.status === 'resolved' ? ' is-resolved' : '' %><%= t.anchor_state === 'lost' ? ' is-lost' : '' %>">
-                    <% if (t.severity) { %><span class="sev sev-<%= t.severity %>"><%= t.severity %></span><% } %>
-                    <a class="finding-loc" href="/pr/<%= pull.number %>/files#<%= t.file_path %>">
-                      <%= t.file_path %><% if (t.start_line) { %>:<%= t.start_line %><% } %>
-                    </a>
-                    <%
-                      // The code under this comment moved or went away. Say so:
-                      // a line number that silently drifted is worse than none.
-                    %>
-                    <% if (t.anchor_state === 'outdated') { %>
-                      <span class="anchor-flag anchor-outdated" title="The code here was changed after this comment was written">outdated</span>
-                    <% } else if (t.anchor_state === 'lost') { %>
-                      <span class="anchor-flag anchor-lost" title="The code this referred to is gone; needs a human">lost</span>
-                    <% } %>
-                    <span class="finding-text"><%= t.comments.length ? t.comments[0].body : '' %></span>
-                  </li>
-                <% }); %>
-              </ul>
-            <% } %>
+            <div class="tl-card-body markdown">
+              <% if (descriptionHtml) { %><%- descriptionHtml %><% } else { %>
+                <p class="tl-empty">No description provided.</p>
+              <% } %>
+            </div>
           </article>
-        <% } %>
 
-        <% if (item.kind === 'commented' && item.thread) { %>
-          <article class="tl-card tl-thread" id="thread-<%= item.thread.id %>">
-            <% item.thread.comments.forEach(function (c, i) { %>
-              <div class="tl-comment<%= i ? ' is-reply' : '' %>">
+          <%
+            // What actually landed on the branch. The timeline is built from
+            // stored events and a commit is not one of those, so these sit
+            // under the description, where the push that made them would be.
+          %>
+          <% if (commits.length) { %>
+            <div class="tl-note tl-commits">
+              <%- include('../partials/avatar', { handle: author.handle, color: author.color, kind: author.kind }) %>
+              <span class="tl-author"><%= author.handle %></span>
+              added <%= commits.length %> <%= commits.length === 1 ? 'commit' : 'commits' %>
+              <time class="tl-time" datetime="<%= commits[commits.length - 1].date %>"><%= commits[commits.length - 1].date %></time>
+            </div>
+            <ul class="commit-list">
+              <% commits.forEach(function (c) { %>
+                <li class="commit-row">
+                  <%- include('../partials/avatar', { handle: c.author, color: null, kind: 'human' }) %>
+                  <span class="commit-subject" title="<%= c.subject %>"><%= c.subject %></span>
+                  <span class="commit-sha"><%= c.short %></span>
+                </li>
+              <% }); %>
+            </ul>
+          <% } %>
+
+          <% feed.forEach(function (item) { %>
+            <% if (item.kind === 'opened') { /* already shown as the description */ } %>
+
+            <% if (item.kind === 'review_submitted' && item.review) { %>
+              <article class="tl-card tl-review verdict-<%= item.review.verdict %>">
                 <div class="tl-card-head">
-                  <%- include('../partials/avatar', { handle: c.handle, color: c.color, kind: c.kind }) %>
-                  <span class="tl-author"><%= c.handle %></span>
-                  <time class="tl-time" datetime="<%= c.created_at %>"><%= c.created_at %></time>
+                  <%- include('../partials/avatar', { handle: item.handle, color: item.color, kind: item.participant_kind }) %>
+                  <span class="tl-author"><%= item.handle %></span>
+                  <span class="tl-verb">
+                    <% if (item.review.verdict === 'approve') { %>approved these changes<% } %>
+                    <% if (item.review.verdict === 'request_changes') { %>requested changes<% } %>
+                    <% if (item.review.verdict === 'comment') { %>reviewed<% } %>
+                  </span>
+                  <time class="tl-time" datetime="<%= item.created_at %>"><%= item.created_at %></time>
                 </div>
-                <div class="tl-card-body markdown"><%- c.bodyHtml %></div>
+                <% if (item.review.bodyHtml) { %>
+                  <div class="tl-card-body markdown"><%- item.review.bodyHtml %></div>
+                <% } %>
+                <% if (item.threads && item.threads.length) { %>
+                  <ul class="review-findings">
+                    <% item.threads.forEach(function (t) { %>
+                      <li class="finding<%= t.status === 'resolved' ? ' is-resolved' : '' %><%= t.anchor_state === 'lost' ? ' is-lost' : '' %>">
+                        <% if (t.severity) { %><span class="sev sev-<%= t.severity %>"><%= t.severity %></span><% } %>
+                        <a class="finding-loc" href="/pr/<%= pull.number %>/files#<%= t.file_path %>">
+                          <%= t.file_path %><% if (t.start_line) { %>:<%= t.start_line %><% } %>
+                        </a>
+                        <%
+                          // The code under this comment moved or went away. Say so:
+                          // a line number that silently drifted is worse than none.
+                        %>
+                        <% if (t.anchor_state === 'outdated') { %>
+                          <span class="anchor-flag anchor-outdated" title="The code here was changed after this comment was written">outdated</span>
+                        <% } else if (t.anchor_state === 'lost') { %>
+                          <span class="anchor-flag anchor-lost" title="The code this referred to is gone; needs a human">lost</span>
+                        <% } %>
+                        <span class="finding-text"><%= t.comments.length ? t.comments[0].body : '' %></span>
+                      </li>
+                    <% }); %>
+                  </ul>
+                <% } %>
+              </article>
+            <% } %>
+
+            <% if (item.kind === 'commented' && item.thread) { %>
+              <article class="tl-card tl-thread" id="thread-<%= item.thread.id %>">
+                <% item.thread.comments.forEach(function (c, i) { %>
+                  <div class="tl-comment<%= i ? ' is-reply' : '' %>">
+                    <div class="tl-card-head">
+                      <%- include('../partials/avatar', { handle: c.handle, color: c.color, kind: c.kind }) %>
+                      <span class="tl-author"><%= c.handle %></span>
+                      <span class="tl-verb">commented</span>
+                      <time class="tl-time" datetime="<%= c.created_at %>"><%= c.created_at %></time>
+                      <% if (c.participant_id === pull.author_id) { %>
+                        <span class="tl-badge">Author</span>
+                      <% } %>
+                    </div>
+                    <div class="tl-card-body markdown"><%- c.bodyHtml %></div>
+                  </div>
+                <% }); %>
+                <form class="reply-form" data-thread="<%= item.thread.id %>">
+                  <textarea name="body" rows="2" placeholder="Reply…" aria-label="Reply"></textarea>
+                  <button type="submit">Reply</button>
+                </form>
+              </article>
+            <% } %>
+
+            <% if (item.kind === 'thread_resolved' && item.thread) { %>
+              <div class="tl-note">
+                <%- include('../partials/avatar', { handle: item.handle, color: item.color, kind: item.participant_kind }) %>
+                <span class="tl-author"><%= item.handle %></span>
+                resolved a thread on
+                <a href="/pr/<%= pull.number %>/files"><%= item.thread.file_path || 'this pull request' %></a>
+                <time class="tl-time" datetime="<%= item.created_at %>"><%= item.created_at %></time>
               </div>
-            <% }); %>
-            <form class="reply-form" data-thread="<%= item.thread.id %>">
-              <textarea name="body" rows="2" placeholder="Reply…" aria-label="Reply"></textarea>
-              <button type="submit">Reply</button>
-            </form>
-          </article>
-        <% } %>
+            <% } %>
 
-        <% if (item.kind === 'thread_resolved' && item.thread) { %>
-          <div class="tl-note">
-            <%- include('../partials/avatar', { handle: item.handle, color: item.color, kind: item.participant_kind }) %>
-            <span class="tl-author"><%= item.handle %></span>
-            resolved a thread on
-            <a href="/pr/<%= pull.number %>/files"><%= item.thread.file_path || 'this pull request' %></a>
-            <time class="tl-time" datetime="<%= item.created_at %>"><%= item.created_at %></time>
+            <% if (item.kind === 'triaged' && item.from && item.to) { %>
+              <div class="tl-note tl-triage">
+                <span class="tl-author"><%= item.handle || 'triage' %></span>
+                marked a finding on <code><%= item.from.file_path %></code>
+                as <strong><%= (item.payload && item.payload.kind || '').replace('_', ' ') %></strong>
+                a finding on <code><%= item.to.file_path %></code>
+                <time class="tl-time" datetime="<%= item.created_at %>"><%= item.created_at %></time>
+              </div>
+            <% } %>
+
+            <% if (item.kind === 'closed' || item.kind === 'reopened') { %>
+              <div class="tl-note">
+                <span class="tl-author"><%= item.handle || 'someone' %></span>
+                <%= item.kind %> this pull request
+                <time class="tl-time" datetime="<%= item.created_at %>"><%= item.created_at %></time>
+              </div>
+            <% } %>
+          <% }); %>
+        </div>
+
+        <form class="comment-form" id="pr-comment-form" data-pr="<%= pull.number %>">
+          <label class="sr-only" for="pr-comment-body">Comment on this pull request</label>
+          <textarea id="pr-comment-body" name="body" rows="4"
+                    placeholder="Comment on this pull request… use @handle to address a reviewer"></textarea>
+          <div class="comment-form-actions">
+            <span class="comment-hint">Markdown supported</span>
+            <button type="submit">Comment</button>
           </div>
-        <% } %>
-
-        <% if (item.kind === 'triaged' && item.from && item.to) { %>
-          <div class="tl-note tl-triage">
-            <span class="tl-author"><%= item.handle || 'triage' %></span>
-            marked a finding on <code><%= item.from.file_path %></code>
-            as <strong><%= (item.payload && item.payload.kind || '').replace('_', ' ') %></strong>
-            a finding on <code><%= item.to.file_path %></code>
-            <time class="tl-time" datetime="<%= item.created_at %>"><%= item.created_at %></time>
-          </div>
-        <% } %>
-
-        <% if (item.kind === 'closed' || item.kind === 'reopened') { %>
-          <div class="tl-note">
-            <span class="tl-author"><%= item.handle || 'someone' %></span>
-            <%= item.kind %> this pull request
-            <time class="tl-time" datetime="<%= item.created_at %>"><%= item.created_at %></time>
-          </div>
-        <% } %>
-      <% }); %>
-    </div>
-
-    <form class="comment-form" id="pr-comment-form" data-pr="<%= pull.number %>">
-      <label class="sr-only" for="pr-comment-body">Comment on this pull request</label>
-      <textarea id="pr-comment-body" name="body" rows="4"
-                placeholder="Comment on this pull request… use @handle to address a reviewer"></textarea>
-      <div class="comment-form-actions">
-        <span class="comment-hint">Markdown supported</span>
-        <button type="submit">Comment</button>
+        </form>
       </div>
-    </form>
+
+      <%- include('../partials/pr-sidebar') %>
+    </div>
   </main>
 
   <div id="toast" class="toast" hidden></div>
+  <script src="/static/js/base-picker.js"></script>
   <script src="/static/js/pr.js"></script>
 </body>
 </html>

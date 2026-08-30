@@ -20,8 +20,8 @@
     <span class="diff-summary">
       <strong><%= summary.fileCount %></strong> changed
       <%= summary.fileCount === 1 ? 'file' : 'files' %>
-      <span class="summary-additions">+<%= summary.additions %></span>
-      <span class="summary-deletions">−<%= summary.deletions %></span>
+      <span class="summary-additions">+<%= summary.additions.toLocaleString('en-US') %></span>
+      <span class="summary-deletions">−<%= summary.deletions.toLocaleString('en-US') %></span>
     </span>
     <span class="pr-toolbar-right">
       <% if (isRepo) { %>
@@ -67,6 +67,7 @@
   </div>
 
   <div id="toast" class="toast" hidden></div>
+  <script src="/static/js/base-picker.js"></script>
   <script src="/static/js/review.js"></script>
   <script src="/static/js/comments.js"></script>
 </body>

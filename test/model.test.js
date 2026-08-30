@@ -9,7 +9,7 @@ import path from 'node:path';
 import os from 'node:os';
 
 import { openDb } from '../src/db/index.js';
-import { ensureParticipant, listParticipants } from '../src/model/participants.js';
+import { ensureParticipant, listParticipants, currentHuman, toHandle } from '../src/model/participants.js';
 import { ensureRepo, createPull, tabCounts, updatePull } from '../src/model/pulls.js';
 import { getOrCreatePending, submitReview, listReviews, verdictSummary } from '../src/model/reviews.js';
 import * as threads from '../src/model/threads.js';
@@ -48,7 +48,28 @@ test('participants: humans and agents are the same shape', (t) => {
   assert.equal(listParticipants(db).length, 3);
 });
 
-test('PRs are numbered per repo', (t) => {
+test('the browser posts as the known human, or one named after the committer', () => {
+  const seeded = freshDb();
+  const { human } = seed(seeded);
+  // an existing human wins, whatever git says
+  assert.equal(currentHuman(seeded, { name: 'Someone Else' }).id, human.id);
+  assert.equal(listParticipants(seeded).filter((p) => p.kind === 'human').length, 1);
+
+  // a fresh store gets exactly one, derived from git user.name
+  const fresh = freshDb();
+  ensureParticipant(fresh, { handle: 'claude', agentId: 'claude-code' });
+  const me = currentHuman(fresh, { name: 'Cahill Eyte' });
+  assert.equal(me.kind, 'human');
+  assert.equal(me.handle, 'cahill-eyte');
+  assert.equal(me.display_name, 'Cahill Eyte');
+  assert.equal(currentHuman(fresh).id, me.id); // stable across renders
+
+  // no git identity at all still yields a usable handle
+  assert.equal(toHandle('  '), null);
+  assert.match(currentHuman(freshDb()).handle, /^[a-z0-9-]+$/);
+});
+
+test('PR numbers are unique across every repo in the store', (t) => {
   const db = freshDb();
   const { repo, human } = seed(db);
   const second = createPull(db, {
@@ -59,6 +80,18 @@ test('PRs are numbered per repo', (t) => {
     headRef: 'other',
   });
   assert.equal(second.number, 2);
+
+  // One server lists pull requests from every repo you have added, so a number
+  // has to name exactly one of them -- #3 here, not a second #1.
+  const other = ensureRepo(db, '/tmp/another-repo');
+  const elsewhere = createPull(db, {
+    repoId: other.id,
+    title: 'Somewhere else',
+    authorId: human.id,
+    baseRef: 'main',
+    headRef: 'topic',
+  });
+  assert.equal(elsewhere.number, 3);
 });
 
 test('two agents review the same PR without colliding', (t) => {

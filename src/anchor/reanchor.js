@@ -58,8 +58,8 @@ export function relocate(lines, snapshot, hint) {
     return { anchorState: 'lost', startLine: hint, endLine: hint, moved: false };
   }
 
-  // No snapshot (comments migrated from the old store often have none): the
-  // most we can say is whether the line still exists.
+  // No snapshot (a comment can be filed without one): the most we can say is
+  // whether the line still exists.
   if (!snapshot || !snapshot.length) {
     const inRange = Number.isFinite(hint) && hint >= 1 && hint <= lines.length;
     return {
