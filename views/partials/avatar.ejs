@@ -1,0 +1,9 @@
+<%
+  // Agents get a square avatar, humans a round one, so who-said-what is legible
+  // at a glance once several reviewers are in a thread.
+  const isAgent = kind === 'agent';
+%>
+<span class="avatar<%= isAgent ? ' avatar-agent' : '' %>"
+      style="--avatar-color: <%= color || 'var(--fgColor-muted)' %>"
+      title="<%= handle %><%= isAgent ? ' (agent)' : '' %>"
+      aria-hidden="true"><%= (handle || '?').charAt(0).toUpperCase() %></span>

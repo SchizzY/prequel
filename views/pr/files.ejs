@@ -1,0 +1,74 @@
+<!doctype html>
+<html
+  lang="en"
+  data-color-mode="<%= colorMode %>"
+  data-light-theme="light"
+  data-dark-theme="dark"
+  data-view="<%= view %>"
+  data-diff="<%= diffMode %>"
+  data-branch="<%= pull.head_ref %>"
+  data-pr="<%= pull.number %>"
+  data-comments-enabled="<%= commentsEnabled ? '1' : '0' %>"
+>
+<head>
+  <%- include('../partials/head', { title: 'Files changed · ' + pull.title }) %>
+</head>
+<body>
+  <%- include('../partials/pr-header') %>
+
+  <div class="pr-toolbar">
+    <span class="diff-summary">
+      <strong><%= summary.fileCount %></strong> changed
+      <%= summary.fileCount === 1 ? 'file' : 'files' %>
+      <span class="summary-additions">+<%= summary.additions.toLocaleString('en-US') %></span>
+      <span class="summary-deletions">−<%= summary.deletions.toLocaleString('en-US') %></span>
+    </span>
+    <span class="pr-toolbar-right">
+      <% if (isRepo) { %>
+      <span class="seg-toggle" role="group" aria-label="Changes to show">
+        <a class="seg-btn<%= diffMode === 'all' ? ' is-active' : '' %>"
+           href="?diff=all" data-param="diff" data-value="all"
+           title="Branch commits + uncommitted + untracked">All</a>
+        <a class="seg-btn<%= diffMode === 'branch' ? ' is-active' : '' %>"
+           href="?diff=branch" data-param="diff" data-value="branch"
+           title="Committed changes on this branch vs base">Branch</a>
+        <a class="seg-btn<%= diffMode === 'working' ? ' is-active' : '' %>"
+           href="?diff=working" data-param="diff" data-value="working"
+           title="Uncommitted + untracked changes">Working</a>
+      </span>
+      <% } %>
+      <span class="seg-toggle view-toggle" role="group" aria-label="Diff view">
+        <a class="seg-btn<%= view === 'unified' ? ' is-active' : '' %>"
+           href="?view=unified" data-param="view" data-value="unified">Unified</a>
+        <a class="seg-btn<%= view === 'split' ? ' is-active' : '' %>"
+           href="?view=split" data-param="view" data-value="split">Split</a>
+      </span>
+      <span class="repo-path" title="<%= repoPath %>"><%= repoPath %></span>
+    </span>
+  </div>
+
+  <div class="review-layout">
+    <% if (treeHtml) { %>
+    <aside class="file-tree-pane" aria-label="Changed files">
+      <div class="tree-header">Files changed</div>
+      <nav class="file-tree"><%- treeHtml %></nav>
+    </aside>
+    <div class="tree-resizer" role="separator" aria-orientation="vertical"
+         aria-label="Resize file pane" title="Drag to resize"></div>
+    <% } %>
+    <main class="diff-container">
+      <% if (error) { %>
+        <div class="notice notice-error">Could not read git diff: <%= error %></div>
+      <% } else if (!isRepo) { %>
+        <div class="notice notice-info">Not a git repository — showing a built-in sample diff.</div>
+      <% } %>
+      <%- filesHtml %>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="/static/js/base-picker.js"></script>
+  <script src="/static/js/review.js"></script>
+  <script src="/static/js/comments.js"></script>
+</body>
+</html>

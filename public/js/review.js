@@ -31,6 +31,15 @@ function goToParam(param, value) {
   if (changed) location.replace(location.pathname + '?' + params.toString());
 })();
 
+// Base branch picker in the header — reload diffed against the chosen ref.
+document.addEventListener('change', (e) => {
+  const refSelect = e.target.closest('.ref-select');
+  // The PR pages have their own picker that patches the pull request instead.
+  if (refSelect && !refSelect.classList.contains('pr-base-select')) {
+    goToParam('base', refSelect.value);
+  }
+});
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -77,9 +86,14 @@ async function expandContext(btn) {
   const split = row.closest('table').classList.contains('diff-table-split');
   row.dataset.loading = '1';
   try {
+    // The PR, when there is one: its diff may come from another repo, or from
+    // a branch this checkout is not standing on, and the server needs to read
+    // the context lines from the same place the diff came from.
+    const pr = document.documentElement.dataset.pr;
     const res = await fetch(
       `/api/context?path=${encodeURIComponent(path)}&rev=${rev}` +
-        `&start=${gapStartNew}&end=${gapEndNew}`
+        `&start=${gapStartNew}&end=${gapEndNew}` +
+        (pr ? `&pr=${encodeURIComponent(pr)}` : '')
     );
     const data = await res.json();
     const lines = data.lines || [];

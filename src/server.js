@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import { renderDiff, renderFileTree } from './render/renderer.js';
 import { highlightDiff, highlightLines } from './render/highlighter.js';
 import { annotateWordDiffs } from './render/wordDiff.js';
-import { getDiff, getBlobLines } from './git/gitService.js';
+import { getDiff, getBlobLines, listBranches, resolveHeadRev } from './git/gitService.js';
 import { parseDiff, inferLanguage } from './git/diffParser.js';
 import { sampleDiff } from './sampleDiff.js';
 import {
@@ -18,6 +18,10 @@ import {
   restoreCleared,
 } from './comments/commentStore.js';
 import { buildMarkdown, buildJson } from './export/claudeExport.js';
+import { openDb } from './db/index.js';
+import { getPullByNumber, getRepo } from './model/pulls.js';
+import { mountApi } from './api/routes.js';
+import { mountPages } from './pages/routes.js';
 import { marked } from 'marked';
 
 marked.setOptions({ breaks: true });
@@ -52,7 +56,7 @@ const projectRoot = path.resolve(__dirname, '..');
 
 const DIFF_MODES = ['all', 'branch', 'working'];
 
-export function createServer({ repoRoot = null, defaultBase = null } = {}) {
+export function createServer({ repoRoot = null, defaultBase = null, dbPath } = {}) {
   const app = express();
 
   app.set('view engine', 'ejs');
@@ -105,10 +109,14 @@ export function createServer({ repoRoot = null, defaultBase = null } = {}) {
     const rev = repoRoot && diffMode === 'branch' ? 'HEAD' : 'WORKTREE';
     const { filesHtml, summary } = renderDiff(diff, { view, rev });
     const treeHtml = diff.files.length ? renderFileTree(diff) : '';
+    // Options for the base picker in the header; empty outside a repo, where
+    // the sample diff's base is not a real ref.
+    const branches = repoRoot ? await listBranches(repoRoot) : { local: [], remote: [] };
     res.render('review', {
       repoPath: repoRoot || process.cwd(),
       isRepo: Boolean(repoRoot),
       base,
+      branches,
       head,
       diffMode,
       colorMode,
@@ -121,19 +129,37 @@ export function createServer({ repoRoot = null, defaultBase = null } = {}) {
     });
   });
 
+  // Where a page's context lines come from. The Files tab sends the PR it is
+  // showing (?pr=), because that PR may live in another repo, or on a branch
+  // this checkout is not standing on -- expanding a hunk has to read the same
+  // code the diff around it came from. Without a PR this is the standalone
+  // review page, which is always about the repo prequel was started in.
+  async function contextSource(req) {
+    const number = Number(req.query.pr);
+    const db = app.locals.db;
+    if (!db || !Number.isInteger(number)) return { root: repoRoot, committed: 'HEAD' };
+    const pull = getPullByNumber(db, number);
+    if (!pull) return { root: repoRoot, committed: 'HEAD' };
+    const root = getRepo(db, pull.repo_id)?.root_path || repoRoot;
+    return { root, committed: (await resolveHeadRev(root, pull.head_ref)).rev };
+  }
+
   // On-demand context lines for hunk expansion.
-  // ?path=&rev=HEAD|WORKTREE&start=&end= (new-side line numbers, 1-based).
+  // ?path=&rev=HEAD|WORKTREE&start=&end=&pr= (new-side line numbers, 1-based).
   app.get('/api/context', async (req, res) => {
     if (!repoRoot) return res.status(400).json({ error: 'no repo' });
     const filePath = String(req.query.path || '');
-    const rev = req.query.rev === 'HEAD' ? 'HEAD' : 'WORKTREE';
     const start = parseInt(req.query.start, 10);
     const end = parseInt(req.query.end, 10);
     if (!filePath || !Number.isFinite(start) || !Number.isFinite(end)) {
       return res.status(400).json({ error: 'bad params' });
     }
     try {
-      const { lines, from, eof } = await getBlobLines(repoRoot, { rev, path: filePath, start, end });
+      const source = await contextSource(req);
+      // The client says which side it wants, not which ref: the ref is this
+      // server's business, so a request can never name an arbitrary revision.
+      const rev = req.query.rev && req.query.rev !== 'WORKTREE' ? source.committed : 'WORKTREE';
+      const { lines, from, eof } = await getBlobLines(source.root, { rev, path: filePath, start, end });
       const html = await highlightLines(lines, inferLanguage(filePath));
       res.json({ from, eof, lines, html });
     } catch (err) {
@@ -181,6 +207,17 @@ export function createServer({ repoRoot = null, defaultBase = null } = {}) {
       sseClients.delete(res);
     });
   });
+
+  // --- multi-reviewer API -------------------------------------------------
+  // Threads, reviews and participants live in SQLite. Mounted alongside the
+  // original /api/comments routes rather than replacing them, so the existing
+  // single-agent skill keeps working while the new model is wired up.
+  if (repoRoot) {
+    const db = openDb(dbPath);
+    app.locals.db = db;
+    mountApi(app, db, { repoRoot, emit });
+    mountPages(app, db, { repoRoot, defaultBase });
+  }
 
   // --- review comments ---------------------------------------------------
   app.get('/api/comments', async (req, res) => {

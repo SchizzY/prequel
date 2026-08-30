@@ -31,7 +31,31 @@
         <span class="pr-refs">
           <span class="ref-pill"><%= head %></span>
           <span class="ref-arrow">into</span>
+          <% if (isRepo && (branches.local.length || branches.remote.length)) { %>
+          <span class="ref-select-wrap">
+            <select class="ref-pill ref-select" aria-label="Base branch" title="Base to diff against">
+              <%
+                // The current base may be a SHA or a ref that no longer exists;
+                // keep it selectable so the header never lies about what is shown.
+                const known = branches.local.concat(branches.remote);
+                if (!known.includes(base)) {
+              %>
+              <option value="<%= base %>" selected><%= base %></option>
+              <% }
+                 [['Local', branches.local], ['Remote', branches.remote]].forEach(function (group) {
+                   const [label, refs] = group;
+                   if (!refs.length) return; %>
+              <optgroup label="<%= label %>">
+                <% refs.forEach(function (ref) { %>
+                <option value="<%= ref %>"<%= ref === base ? ' selected' : '' %>><%= ref %></option>
+                <% }); %>
+              </optgroup>
+              <% }); %>
+            </select>
+          </span>
+          <% } else { %>
           <span class="ref-pill"><%= base %></span>
+          <% } %>
         </span>
       </div>
       <div class="pr-meta-row">

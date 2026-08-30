@@ -74,6 +74,46 @@ body {
   color: var(--fgColor-muted, #59636e);
 }
 
+/* The base pill is a <select>; it keeps .ref-pill's look and gains a caret. */
+.ref-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ref-select {
+  appearance: none;
+  /* Shrink to the selected ref rather than the widest option, so the control
+     keeps the pill's shape. Ignored outside Chromium; the select is just
+     wider there. */
+  field-sizing: content;
+  border: 0;
+  cursor: pointer;
+  font-size: 12px;
+  padding-right: 18px; /* room for the caret */
+}
+
+.ref-select:hover {
+  background-color: var(--bgColor-accent-emphasis, #0969da);
+  color: var(--fgColor-onEmphasis, #ffffff);
+}
+
+.ref-select-wrap::after {
+  content: "";
+  position: absolute;
+  right: 6px;
+  width: 0;
+  height: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-top: 4px solid var(--fgColor-accent, #0969da);
+  pointer-events: none;
+}
+
+.ref-select-wrap:hover::after {
+  border-top-color: var(--fgColor-onEmphasis, #ffffff);
+}
+
 .pr-meta-row {
   display: flex;
   align-items: center;

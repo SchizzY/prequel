@@ -1,0 +1,75 @@
+<%
+  // GitHub's right rail, with the sections this tool actually has state for:
+  // who is reviewing, who owns the open findings, what kind of findings they
+  // are, and who has spoken. Nothing here stands in for a feature that does
+  // not exist -- an empty section says so in words.
+  const MARK = {
+    approve: { cls: 'verdict-approve', glyph: '✓', label: 'approved' },
+    request_changes: { cls: 'verdict-changes', glyph: '✗', label: 'requested changes' },
+    comment: { cls: 'verdict-comment', glyph: '💬', label: 'commented' },
+  };
+%>
+<aside class="pr-sidebar" aria-label="Pull request details">
+  <section class="sidebar-section">
+    <h2 class="sidebar-heading">Reviewers</h2>
+    <% if (verdicts && verdicts.length) { %>
+      <ul class="sidebar-people">
+        <% verdicts.forEach(function (v) { const mark = MARK[v.verdict] || MARK.comment; %>
+          <li class="sidebar-person">
+            <%- include('avatar', { handle: v.handle, color: v.color, kind: v.kind }) %>
+            <span class="sidebar-handle"><%= v.handle %></span>
+            <span class="verdict-mark <%= mark.cls %>" title="<%= v.handle %> <%= mark.label %>"><%= mark.glyph %></span>
+          </li>
+        <% }); %>
+      </ul>
+    <% } else { %>
+      <p class="sidebar-empty">No reviews yet.</p>
+    <% } %>
+  </section>
+
+  <section class="sidebar-section">
+    <h2 class="sidebar-heading">Assignees</h2>
+    <% if (sidebar.assignees.length) { %>
+      <ul class="sidebar-people">
+        <% sidebar.assignees.forEach(function (a) { %>
+          <li class="sidebar-person">
+            <%- include('avatar', { handle: a.handle, color: a.color, kind: a.kind }) %>
+            <span class="sidebar-handle"><%= a.handle %></span>
+            <span class="sidebar-note"><%= a.count %> open</span>
+          </li>
+        <% }); %>
+      </ul>
+    <% } else { %>
+      <p class="sidebar-empty">No one — open findings are unassigned.</p>
+    <% } %>
+  </section>
+
+  <section class="sidebar-section">
+    <h2 class="sidebar-heading">Findings</h2>
+    <% if (sidebar.severities.length) { %>
+      <p class="sidebar-labels">
+        <% sidebar.severities.forEach(function (s) { %>
+          <a class="sev sev-<%= s.severity %>" href="/pr/<%= pull.number %>/files"><%= s.severity %> <%= s.count %></a>
+        <% }); %>
+      </p>
+    <% } %>
+    <% if (sidebar.findings.open || sidebar.findings.resolved) { %>
+      <p class="sidebar-note"><%= sidebar.findings.open %> open · <%= sidebar.findings.resolved %> resolved</p>
+    <% } else { %>
+      <p class="sidebar-empty">Nothing raised yet.</p>
+    <% } %>
+  </section>
+
+  <section class="sidebar-section">
+    <h2 class="sidebar-heading"><%= sidebar.participants.length %> <%= sidebar.participants.length === 1 ? 'participant' : 'participants' %></h2>
+    <p class="sidebar-avatars">
+      <% sidebar.participants.forEach(function (p) { %>
+        <%- include('avatar', { handle: p.handle, color: p.color, kind: p.kind }) %>
+      <% }); %>
+    </p>
+  </section>
+
+  <section class="sidebar-section sidebar-repo">
+    <span class="repo-path" title="<%= repoPath %>"><%= repoPath %></span>
+  </section>
+</aside>
