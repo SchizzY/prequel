@@ -48,23 +48,62 @@ function escapeHtml(s) {
 }
 
 // Bounded cache of tokenized text -> array of token-lines.
+//
+// Bounded by *characters*, not entries: the old limit of 800 entries said
+// nothing about their size, and the key was the whole hunk text, so a diff of
+// large files retained the entire source twice over -- once as key, once in the
+// tokens. A hash key and a total-size budget make the ceiling predictable.
 const cache = new Map();
-const CACHE_MAX = 800;
+const CACHE_MAX_CHARS = 4 * 1024 * 1024;
+let cacheChars = 0;
 
-function tokenStyle(tok) {
-  return tok.htmlStyle
-    ? `color:${tok.htmlStyle.color};--shiki-dark:${tok.htmlStyle['--shiki-dark']}`
-    : '';
+// FNV-1a. Only needs to distinguish cache entries, so 32 bits is plenty; the
+// text length is mixed into the key as a cheap collision guard.
+function hashKey(lang, text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${lang}:${text.length}:${(h >>> 0).toString(36)}`;
+}
+
+// A diff repeats the same handful of theme colours on every token: 24,000 lines
+// produced 616,000 `style="color:#…;--shiki-dark:#…"` attributes drawn from
+// five distinct values -- 26MB of a 53MB page, all of it duplication. So each
+// distinct pair is registered once as a class and the tokens carry the class
+// name; `paletteCss()` emits the definitions into the page.
+const palette = new Map();
+
+function tokenClass(tok) {
+  if (!tok.htmlStyle) return '';
+  const style = `color:${tok.htmlStyle.color};--shiki-dark:${tok.htmlStyle['--shiki-dark']}`;
+  let name = palette.get(style);
+  if (!name) {
+    name = `tk${palette.size}`;
+    palette.set(style, name);
+  }
+  return name;
+}
+
+/** The token colour classes used so far, as a stylesheet. */
+export function paletteCss() {
+  let css = '';
+  for (const [style, name] of palette) css += `.${name}{${style}}`;
+  return css;
 }
 
 // Emit a token's content, splitting at word-diff range boundaries so changed
 // segments get the extra `wd` (word-diff) class. `base` is the token's char
 // offset within its line; `ranges` are [start,end) changed spans for the line.
 function tokenToHtml(tok, base, ranges) {
-  const style = tokenStyle(tok);
+  const colour = tokenClass(tok);
   const content = tok.content;
   if (!ranges || ranges.length === 0) {
-    return `<span class="tok" style="${style}">${escapeHtml(content)}</span>`;
+    // An unstyled, unchanged token needs no span at all -- on a plain-text or
+    // unsupported-language diff that is every token on the line.
+    if (!colour) return escapeHtml(content);
+    return `<span class="tok ${colour}">${escapeHtml(content)}</span>`;
   }
   const inRange = (abs) => ranges.some(([s, e]) => abs >= s && abs < e);
   let out = '';
@@ -73,8 +112,8 @@ function tokenToHtml(tok, base, ranges) {
     const changed = inRange(base + i);
     let j = i + 1;
     while (j < content.length && inRange(base + j) === changed) j++;
-    const cls = changed ? 'tok wd' : 'tok';
-    out += `<span class="${cls}" style="${style}">${escapeHtml(content.slice(i, j))}</span>`;
+    const cls = `tok${changed ? ' wd' : ''}${colour ? ' ' + colour : ''}`;
+    out += `<span class="${cls}">${escapeHtml(content.slice(i, j))}</span>`;
     i = j;
   }
   return out;
@@ -99,7 +138,7 @@ function plainTokenLines(text) {
 // Cached tokenization: text -> array of token-lines (each token has content +
 // htmlStyle). Falls back to plain single-token lines if Shiki can't tokenize.
 function tokensForText(hl, text, lang) {
-  const key = lang + ' ' + text;
+  const key = hashKey(lang, text);
   const hit = cache.get(key);
   if (hit) return hit;
   let perLine;
@@ -108,8 +147,12 @@ function tokensForText(hl, text, lang) {
   } catch {
     perLine = plainTokenLines(text);
   }
-  if (cache.size >= CACHE_MAX) cache.clear();
+  if (cacheChars + text.length > CACHE_MAX_CHARS) {
+    cache.clear();
+    cacheChars = 0;
+  }
   cache.set(key, perLine);
+  cacheChars += text.length;
   return perLine;
 }
 
@@ -126,7 +169,9 @@ export async function highlightLines(lines, lang) {
 // Combines Shiki syntax tokens with word-diff ranges so both layers render
 // together. Word highlighting applies even when there's no language.
 export async function highlightDiff(diff) {
-  const langs = [...new Set(diff.files.map((f) => f.language).filter(Boolean))];
+  const langs = [
+    ...new Set(diff.files.filter((f) => !f.deferred && !f.isBinary).map((f) => f.language).filter(Boolean)),
+  ];
   let hl = null;
   const usable = new Set();
   if (langs.length) {
@@ -135,7 +180,7 @@ export async function highlightDiff(diff) {
   }
 
   for (const file of diff.files) {
-    if (file.isBinary) continue;
+    if (file.isBinary || file.deferred) continue; // not on the page; not worth tokenizing
     const lang = usable.has(file.language) ? file.language : null;
     for (const hunk of file.hunks) {
       const newText = hunk.lines

@@ -1313,3 +1313,52 @@ textarea.compare-input { resize: vertical; min-height: 100px; }
   .btn:active:not(:disabled),
   .pr-list-drop:active { transform: none; }
 }
+
+/* How much a comment's line number can still be trusted. A thread whose code
+   was edited under it stays visible and says so, rather than quietly pointing
+   at whatever now occupies that line. */
+.anchor-drift {
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-transform: lowercase;
+}
+.anchor-outdated {
+  background: var(--bgColor-attention-muted, #fff8c5);
+  color: var(--fgColor-attention, #9a6700);
+}
+.anchor-lost {
+  background: var(--bgColor-danger-muted, #ffebe9);
+  color: var(--fgColor-danger, #cf222e);
+}
+
+/* The thread a "finding" link on the Conversation tab was pointing at. */
+.is-focused .comment-thread,
+.comment-thread.is-focused {
+  outline: 2px solid var(--fgColor-accent, #0969da);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* A second human reviewer is neither you nor an agent: distinct, but without
+   the accent that marks an agent's replies. */
+.comment-author-other {
+  color: var(--fgColor-done, #8250df);
+}
+.comment[data-author='other'] {
+  border-left: 3px solid var(--borderColor-done-emphasis, #8250df);
+}
+
+/* A thread whose line is not on screen -- collapsed context, or a diff mode
+   that does not show it. Docked to the file header rather than dropped, with
+   the line it refers to spelled out. */
+.comment-unplaced .comment-thread {
+  border-left: 3px solid var(--borderColor-attention-emphasis, #bf8700);
+}
+.unplaced-note {
+  font-size: 12px;
+  color: var(--fgColor-muted, #59636e);
+  padding: 4px 8px;
+}

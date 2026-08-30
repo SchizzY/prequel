@@ -1156,3 +1156,64 @@ body {
 .comment-thread.is-resolved:hover {
   opacity: 1;
 }
+
+/* A file past the page's render budget: header and counts as usual, rows on
+   request. Keeps a large review openable instead of locking up the browser. */
+.diff-deferred {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bgColor-muted, #f6f8fa);
+  border-top: 1px solid var(--borderColor-default, #d1d9e0);
+}
+.load-file-diff {
+  padding: 3px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--bgColor-default, #fff);
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.load-file-diff:hover:not(:disabled) {
+  background: var(--bgColor-neutral-muted, #eaeef2);
+}
+.load-file-diff:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.deferred-note {
+  font-size: 12px;
+  color: var(--fgColor-muted, #59636e);
+}
+
+/* Off-screen files cost nothing to lay out.
+   A review is a very long document -- tens of thousands of table cells, a
+   document height measured in hundreds of screens -- and without containment
+   the browser styles, lays out and paints all of it. Every invalidation (a
+   resize, a font load, expanding a hunk, inserting a comment) then costs a
+   full reflow of the whole diff, which is the half-second-plus main-thread
+   stall that reads as the page freezing.
+
+   `content-visibility: auto` lets the browser skip that work for files that
+   are not near the viewport, and `contain-intrinsic-size` keeps the scrollbar
+   honest by standing in for the real height until one is measured. The
+   per-file estimate is set inline by the renderer, which knows the line count;
+   this is the fallback for anything without one. */
+.file {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1200px;
+}
+
+/* A file being interacted with must never be skipped: a comment box or an
+   expanded hunk inside a skipped subtree would not be measurable. */
+.file:has(.comment-row),
+.file:has(.comment-compose-row),
+.file:has(.file-comment),
+.file:has(:focus-within),
+.file[data-deferred] {
+  content-visibility: visible;
+}

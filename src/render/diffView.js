@@ -5,8 +5,8 @@
 import { getDiff } from '../git/gitService.js';
 import { parseDiff } from '../git/diffParser.js';
 import { annotateWordDiffs } from './wordDiff.js';
-import { highlightDiff } from './highlighter.js';
-import { renderDiff, renderFileTree } from './renderer.js';
+import { highlightDiff, paletteCss } from './highlighter.js';
+import { renderDiff, renderFileTree, applyRenderBudget } from './renderer.js';
 import { sampleDiff } from '../sampleDiff.js';
 
 export const DIFF_MODES = ['all', 'branch', 'working'];
@@ -19,6 +19,26 @@ export function diffOptions(query, { defaultBase = null, defaultMode = 'working'
     diffMode: DIFF_MODES.includes(query.diff) ? query.diff : defaultMode,
     base: (typeof query.base === 'string' && query.base ? query.base : null) || defaultBase,
   };
+}
+
+/**
+ * One file's rows, for a diff the page deferred. Same pipeline as the page, so
+ * a loaded file is indistinguishable from one that arrived with it -- just
+ * asked for separately, and paid for only when someone wants to read it.
+ */
+export async function buildFileDiff(repoRoot, { base, diffMode, view, head = null, path }) {
+  const result = await getDiff(repoRoot, { base, mode: diffMode, head, paths: [path] });
+  const diff = parseDiff(result.patch);
+  const file = diff.files.find((f) => f.newPath === path || f.oldPath === path);
+  if (!file) return null;
+  // Only this file, and it is being asked for explicitly, so no budget applies.
+  diff.files = [file];
+  file.deferred = false;
+  annotateWordDiffs(diff);
+  await highlightDiff(diff);
+  const rev = result.mode === 'branch' ? result.rev : 'WORKTREE';
+  const { filesHtml } = renderDiff(diff, { view, rev });
+  return { html: filesHtml, css: paletteCss() };
 }
 
 export async function buildDiffView(repoRoot, { base, diffMode, view, head: headRef = null }) {
@@ -51,11 +71,30 @@ export async function buildDiffView(repoRoot, { base, diffMode, view, head: head
     resolvedBase = sampleDiff.base;
   }
 
+  // Decide what the page will actually show *before* doing any of the work
+  // that only matters for what it shows. Highlighting is the expensive stage --
+  // seconds of blocking CPU on a large diff -- and there is no point spending
+  // it on rows that are not going to be rendered.
+  const budget = applyRenderBudget(diff);
+
   annotateWordDiffs(diff); // intra-line changed ranges (before highlighting)
   await highlightDiff(diff); // attaches per-line highlighted HTML in place
 
   const { filesHtml, summary } = renderDiff(diff, { view, rev });
   const treeHtml = diff.files.length ? renderFileTree(diff) : '';
 
-  return { diff, head, base: resolvedBase, error, filesHtml, treeHtml, summary, rev };
+  // The token colours the markup above refers to. Emitted as a stylesheet
+  // rather than repeated on every span -- see highlighter.js.
+  return {
+    diff,
+    head,
+    base: resolvedBase,
+    error,
+    filesHtml,
+    treeHtml,
+    summary,
+    rev,
+    budget,
+    paletteCss: paletteCss(),
+  };
 }

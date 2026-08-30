@@ -38,12 +38,26 @@ import {
   getBlobSha,
   getDefaultBase,
   getHead,
+  isSafeRef,
   listBranches,
+  resolveBaseRev,
   resolveHeadRev,
   resolveRepoRoot,
 } from '../git/gitService.js';
 import { pickFolder } from '../fs/pickFolder.js';
+import { renderMarkdown } from '../render/markdown.js';
 import { reanchorPull } from '../anchor/reanchor.js';
+
+// A thread leaves the API with its bodies already rendered, so a page that
+// receives one over the wire (a live update, or a refetch after reconnecting)
+// shows the same markdown as the server-rendered page. Without this the client
+// falls back to escaping the raw text, and a whole review turns into literal
+// asterisks and backticks the moment anything touches it.
+const withBodyHtml = (thread) =>
+  thread && {
+    ...thread,
+    comments: (thread.comments || []).map((c) => ({ ...c, bodyHtml: renderMarkdown(c.body) })),
+  };
 
 const SEVERITIES = ['blocking', 'suggestion', 'nit', 'question'];
 const VERDICTS = ['approve', 'request_changes', 'comment'];
@@ -205,6 +219,10 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
     const b = req.body || {};
     if (!b.title) bad('title is required');
     if (!b.baseRef || !b.headRef) bad('baseRef and headRef are required');
+    // A ref beginning with "-" is an option as far as git is concerned, and
+    // these are replayed into `git diff` on every tab of the PR. Reject them
+    // at the write rather than filtering on each read.
+    if (!isSafeRef(b.baseRef) || !isSafeRef(b.headRef)) bad('baseRef and headRef must be refs, not options');
     const author = actor(b);
     // Which repo this PR is about: an id or a path from the picker, or the one
     // prequel is running in when the caller says nothing.
@@ -246,6 +264,8 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
     const pull = pullOr404(req);
     const b = req.body || {};
     oneOf(b.state, ['draft', 'open', 'merged', 'closed'], 'state');
+    if (b.baseRef !== undefined && !isSafeRef(b.baseRef)) bad('baseRef must be a ref, not an option');
+    if (b.headRef !== undefined && !isSafeRef(b.headRef)) bad('headRef must be a ref, not an option');
     const updated = updatePull(db, pull.id, b);
     if (b.state && b.state !== pull.state) {
       addEvent(db, {
@@ -297,13 +317,19 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
     if (!existing) missing('no such review');
     if (!b.verdict) bad('verdict is required');
     oneOf(b.verdict, VERDICTS, 'verdict');
+    // submitReview is idempotent; the timeline must be too, or a retried
+    // submit posts a second card for a round that was already published.
+    const alreadySubmitted = existing.state === 'submitted';
     const review = submitReview(db, req.params.id, { body: b.body, verdict: b.verdict });
     const count = threads.listThreads(db, review.pull_request_id, { reviewId: review.id }).length;
-    addEvent(db, {
+    if (!alreadySubmitted) addEvent(db, {
       pullRequestId: review.pull_request_id,
       participantId: review.participant_id,
       kind: 'review_submitted',
-      payload: { verdict: review.verdict, threads: count },
+      // The review id, so the conversation feed can render *this* review
+      // rather than guessing from the participant -- a second round by the
+      // same reviewer is a normal flow, and guessing showed the first one.
+      payload: { reviewId: review.id, verdict: review.verdict, threads: count },
     });
     emit('review.submitted', { review }, req);
     res.json({ review, threads: count });
@@ -327,7 +353,10 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
       if (!p) missing(`unknown participant: ${q.assignee}`);
       filters.assigneeId = p.id;
     }
-    res.json({ threads: threads.listThreads(db, pull.id, filters), links: threads.listLinks(db, pull.id) });
+    res.json({
+      threads: threads.listThreads(db, pull.id, filters).map(withBodyHtml),
+      links: threads.listLinks(db, pull.id),
+    });
   }));
 
   app.post('/api/pulls/:number/threads', handle(async (req, res) => {
@@ -347,9 +376,19 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
     // Record which version of the file this was written against, so
     // re-anchoring can tell "nothing moved" from "not checked yet" without
     // rescanning every file on every pass.
+    // Against the revision the comment is actually about: the working tree for
+    // the new side, the diff's old side (the merge base) for the old one.
+    // Recording a worktree sha for an old-side thread would mean the
+    // "nothing moved" fast path could never hit for it.
+    const snapshotRev =
+      b.side === 'old'
+        ? await resolveBaseRev(rootOf(pull), pull.base_ref, (await resolveHeadRev(rootOf(pull), pull.head_ref)).rev)
+        : 'WORKTREE';
     const blobSha =
       b.blobSha ??
-      (b.filePath ? await getBlobSha(rootOf(pull), { rev: 'WORKTREE', path: b.filePath }) : null);
+      (b.filePath && snapshotRev
+        ? await getBlobSha(rootOf(pull), { rev: snapshotRev, path: b.filePath })
+        : null);
 
     const thread = threads.createThread(db, {
       pullRequestId: pull.id,
@@ -371,8 +410,8 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
     if (!thread.file_path && !b.reviewId) {
       addEvent(db, { pullRequestId: pull.id, participantId: who.id, kind: 'commented', payload: { threadId: thread.id } });
     }
-    emit('thread.created', { thread }, req);
-    res.json({ thread });
+    emit('thread.created', { thread: withBodyHtml(thread) }, req);
+    res.json({ thread: withBodyHtml(thread) });
   }));
 
   app.post('/api/threads/:id/comments', handle(async (req, res) => {
@@ -387,8 +426,8 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
       reviewId: b.reviewId ?? null,
     });
     const updated = threads.getThread(db, thread.id);
-    emit('thread.updated', { thread: updated }, req);
-    res.json({ thread: updated });
+    emit('thread.updated', { thread: withBodyHtml(updated) }, req);
+    res.json({ thread: withBodyHtml(updated) });
   }));
 
   app.patch('/api/threads/:id', handle(async (req, res) => {
@@ -425,15 +464,25 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
         assigneeId = p.id;
       }
       updated = threads.assign(db, thread.id, assigneeId);
+      // The actor is whoever made the handoff, not its subject -- recording the
+      // assignee as the actor made the notice read "codex assigned ... to
+      // codex". The assignee goes in the payload so the timeline keeps saying
+      // who it was at the time, rather than re-deriving it from the thread's
+      // current owner and rewriting its own history on the next reassignment.
+      const by = b.handle ? actor(b) : null;
       addEvent(db, {
         pullRequestId: thread.pull_request_id,
-        participantId: assigneeId,
+        participantId: by?.id ?? null,
         kind: 'thread_assigned',
-        payload: { threadId: thread.id },
+        payload: {
+          threadId: thread.id,
+          assigneeId,
+          assignee: b.assignee ? String(b.assignee) : null,
+        },
       });
     }
-    emit('thread.updated', { thread: updated }, req);
-    res.json({ thread: updated });
+    emit('thread.updated', { thread: withBodyHtml(updated) }, req);
+    res.json({ thread: withBodyHtml(updated) });
   }));
 
   // Triage: record that two reviewers found the same thing, or disagree.
@@ -464,7 +513,15 @@ export function mountApi(app, db, { repoRoot, emit = () => {} } = {}) {
     // checked out here is the branch itself rather than this working copy.
     const rev =
       req.body?.rev === 'HEAD' ? (await resolveHeadRev(root, pull.head_ref)).rev : 'WORKTREE';
-    const changes = await reanchorPull(db, { repoRoot: root, pullRequestId: pull.id, rev });
+    const changes = await reanchorPull(db, {
+      repoRoot: root,
+      pullRequestId: pull.id,
+      rev,
+      baseRev: await resolveBaseRev(root, pull.base_ref, rev === 'WORKTREE' ? 'HEAD' : rev),
+      // What some other revision happens to contain says nothing about the
+      // thread; only the tree the threads were written against may rewrite one.
+      persist: rev === 'WORKTREE',
+    });
     for (const change of changes) emit('thread.reanchored', { change }, req);
     res.json({
       changed: changes.length,

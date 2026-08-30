@@ -24,6 +24,24 @@ function git(repoRoot, args, { okCodes = [0] } = {}) {
   });
 }
 
+// git parses any argument starting with "-" as an option, and execFile's argv
+// array does nothing about that: `git diff <base> HEAD` with a base of
+// "--output=/path" writes the patch to that path instead of returning it. Refs
+// reach git from the query string (?base=) and from stored pull requests, so
+// they are checked here, at the one place they meet the command line, rather
+// than at each of the callers.
+//
+// Returns `fallback` for anything unusable, so a bad ref degrades to the
+// default comparison instead of throwing a 500 into a page.
+export function safeRef(ref, fallback = null) {
+  const value = typeof ref === 'string' ? ref.trim() : '';
+  if (!value || value.startsWith('-')) return fallback;
+  return value;
+}
+
+/** Whether a ref is safe to hand to git — for validating input at the API. */
+export const isSafeRef = (ref) => safeRef(ref) !== null;
+
 export async function resolveRepoRoot(cwd) {
   try {
     const out = await git(cwd, ['rev-parse', '--show-toplevel']);
@@ -98,6 +116,27 @@ export async function getHead(repoRoot) {
   return sha || 'HEAD';
 }
 
+/**
+ * The revision the diff's *old* side actually comes from: the merge base, not
+ * the base branch tip. A comment on removed code is anchored against what the
+ * diff showed, so re-anchoring it has to read the same revision -- otherwise a
+ * commit landing on the base branch after the branch point shifts every
+ * old-side line number out from under the gutter that is rendering it.
+ *
+ * Returns null when there is nothing usable to read, so callers can leave a
+ * thread alone rather than concluding its code is gone.
+ */
+export async function resolveBaseRev(repoRoot, baseRef, head = 'HEAD') {
+  const base = safeRef(baseRef);
+  if (!repoRoot || !base) return null;
+  const known = await git(repoRoot, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`])
+    .then(() => true)
+    .catch(() => false);
+  if (!known) return null;
+  const merged = await mergeBase(repoRoot, base, head);
+  return merged || base;
+}
+
 async function mergeBase(repoRoot, base, head = 'HEAD') {
   try {
     return (await git(repoRoot, ['merge-base', base, head])).trim();
@@ -115,7 +154,8 @@ async function mergeBase(repoRoot, base, head = 'HEAD') {
  * unknown to git) 'HEAD' is used, so everything behaves exactly as it did when
  * a PR could only ever mean "this working copy".
  */
-export async function resolveHeadRev(repoRoot, headRef) {
+export async function resolveHeadRev(repoRoot, ref) {
+  const headRef = safeRef(ref);
   if (!repoRoot || !headRef) return { rev: 'HEAD', ref: headRef || null, checkedOut: true };
   const current = await getHead(repoRoot).catch(() => null);
   if (!current || headRef === current) return { rev: 'HEAD', ref: headRef, checkedOut: true };
@@ -158,7 +198,7 @@ async function diffRange(repoRoot, { base, mode, head }) {
   const headRev = await resolveHeadRev(repoRoot, head);
   const rev = headRev.rev;
   const effective = headRev.checkedOut ? mode : 'branch';
-  const baseRef = base || (await getDefaultBase(repoRoot));
+  const baseRef = safeRef(base) || (await getDefaultBase(repoRoot));
   const common = { baseRef, headRev: rev, headRef: headRev.ref, mode: effective };
   if (effective === 'working') return { ...common, revs: [rev], untracked: true };
   const mergeWith = await mergeBase(repoRoot, baseRef, rev);
@@ -172,12 +212,15 @@ async function diffRange(repoRoot, { base, mode, head }) {
  *  - working: uncommitted changes (staged + unstaged) + untracked
  *  - all:     branch commits + working tree + untracked (default; superset)
  */
-export async function getDiff(repoRoot, { base, mode = 'all', head = null } = {}) {
+export async function getDiff(repoRoot, { base, mode = 'all', head = null, paths = null } = {}) {
   const range = await diffRange(repoRoot, { base, mode, head });
   const { baseRef, revs, untracked } = range;
 
-  let patch = await git(repoRoot, ['diff', ...DIFF_FLAGS, ...revs]);
-  if (untracked) patch += await untrackedDiff(repoRoot);
+  // A path filter goes after `--`, where git cannot read it as an option, so
+  // one file's diff can be fetched on its own without rebuilding the rest.
+  const only = paths?.length ? ['--', ...paths] : [];
+  let patch = await git(repoRoot, ['diff', ...DIFF_FLAGS, ...revs, ...only]);
+  if (untracked && !paths?.length) patch += await untrackedDiff(repoRoot);
 
   return {
     patch,
@@ -273,7 +316,12 @@ export async function readFileLines(repoRoot, { rev, path: filePath }) {
   if (content === null) return null; // file is gone at this revision
   const lines = content.split('\n');
   if (lines.length && lines[lines.length - 1] === '') lines.pop();
-  return lines;
+  // Strip CR so a CRLF checkout compares equal to the same blob read through
+  // `git show`, which always yields LF. Without this every line of a CRLF
+  // working tree differs from its own committed content, and re-anchoring
+  // demotes untouched threads to `outdated` -- while `git hash-object`, which
+  // applies the same clean filter git does, insists the file has not changed.
+  return lines.map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
 }
 
 /**
