@@ -8,6 +8,8 @@ import open from 'open';
 import { createServer } from '../src/server.js';
 import { resolveRepoRoot } from '../src/git/gitService.js';
 import { install, staleTargets, TARGET_NAMES } from '../src/installer.js';
+import { openDb, DEFAULT_DB_PATH } from '../src/db/index.js';
+import { migrateAll } from '../src/db/migrateJson.js';
 
 const VERSION = JSON.parse(
   readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8')
@@ -37,6 +39,7 @@ const HELP = `prequel — local GitHub-style PR diff reviewer
 Usage:
   prequel [repoPath] [--base <ref>] [--port <n>] [--no-open]
   prequel install <agent> [--project] [--force]
+  prequel migrate
 
   repoPath   Path to the git repo (default: current directory)
   --base     Base ref to diff against (default: main/master)
@@ -51,6 +54,10 @@ comments, fixing them one at a time, and resolving each in the UI as it goes.
   --project  Install into the current repo instead of your home directory, so
              it can be committed and shared with a team
   --force    Overwrite an installed file you have edited
+
+migrate imports comments from the pre-SQLite JSON store in ~/.prequel into
+the new database. It is safe to run more than once: every imported row keeps
+the id it had in the old store, so nothing is brought across twice.
 `;
 
 function findFreePort(start) {
@@ -90,6 +97,27 @@ async function runInstall(target, opts) {
   process.stdout.write(`\n  ${verb}: ${dest}\n  Run /prequel in a Claude Code session to use it.\n\n`);
 }
 
+async function runMigrate() {
+  const db = openDb();
+  const results = migrateAll(db);
+  if (!results.length) {
+    process.stdout.write('\n  No legacy comment stores found in ~/.prequel\n\n');
+    db.close();
+    return;
+  }
+  process.stdout.write(`\n  Importing into ${DEFAULT_DB_PATH}\n\n`);
+  for (const r of results) {
+    const skipped = r.skipped ? `, ${r.skipped} skipped` : '';
+    process.stdout.write(
+      `  ${r.repoRoot}\n` +
+        `    ${r.pulls} pull request(s), ${r.threads} thread(s), ` +
+        `${r.comments} comment(s)${skipped}\n`
+    );
+  }
+  process.stdout.write('\n');
+  db.close();
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const opts = parseArgs(argv);
@@ -102,6 +130,7 @@ async function main() {
     return;
   }
   if (argv[0] === 'install') return runInstall(argv[1], opts);
+  if (argv[0] === 'migrate') return runMigrate();
 
   const repoRoot = await resolveRepoRoot(opts.repoPath);
   // A non-repo is tolerated: the server falls back to the built-in sample diff.

@@ -18,6 +18,8 @@ import {
   restoreCleared,
 } from './comments/commentStore.js';
 import { buildMarkdown, buildJson } from './export/claudeExport.js';
+import { openDb } from './db/index.js';
+import { mountApi } from './api/routes.js';
 import { marked } from 'marked';
 
 marked.setOptions({ breaks: true });
@@ -52,7 +54,7 @@ const projectRoot = path.resolve(__dirname, '..');
 
 const DIFF_MODES = ['all', 'branch', 'working'];
 
-export function createServer({ repoRoot = null, defaultBase = null } = {}) {
+export function createServer({ repoRoot = null, defaultBase = null, dbPath } = {}) {
   const app = express();
 
   app.set('view engine', 'ejs');
@@ -181,6 +183,16 @@ export function createServer({ repoRoot = null, defaultBase = null } = {}) {
       sseClients.delete(res);
     });
   });
+
+  // --- multi-reviewer API -------------------------------------------------
+  // Threads, reviews and participants live in SQLite. Mounted alongside the
+  // original /api/comments routes rather than replacing them, so the existing
+  // single-agent skill keeps working while the new model is wired up.
+  if (repoRoot) {
+    const db = openDb(dbPath);
+    app.locals.db = db;
+    mountApi(app, db, { repoRoot, emit });
+  }
 
   // --- review comments ---------------------------------------------------
   app.get('/api/comments', async (req, res) => {
