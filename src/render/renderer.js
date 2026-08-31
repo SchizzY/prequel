@@ -236,6 +236,18 @@ function renderFileBody(file, view, rev) {
   if (file.isBinary) {
     return '<div class="binary-notice">Binary file not shown.</div>';
   }
+  // Past the page's budget: the header, counts and comment affordances are all
+  // still here, but the rows are fetched when asked for. A browser handed a
+  // few hundred thousand table cells stops being a browser.
+  if (file.deferred) {
+    const lines = file.hunks.reduce((n, h) => n + h.lines.length, 0);
+    return (
+      '<div class="diff-deferred">' +
+      `<button class="load-file-diff" type="button">Load diff</button>` +
+      `<span class="deferred-note">Large diff — ${lines.toLocaleString('en-US')} lines, not loaded</span>` +
+      '</div>'
+    );
+  }
   const ctx = { path: file.newPath, rev };
   return view === 'split' ? renderSplitTable(file, ctx) : renderUnifiedTable(file, ctx);
 }
@@ -253,8 +265,17 @@ function renderFile(file, view, rev) {
     `<span class="file-additions">+${file.additions}</span>` +
     `<span class="file-deletions">−${file.deletions}</span>`;
 
+  // A height to stand in for this file while it is off-screen and skipped, so
+  // the scrollbar does not jump as the reader moves through the diff. Rows are
+  // 20px (see .diff-table line-height) plus the header and padding.
+  const rows = file.isBinary ? 0 : file.hunks.reduce((n, h) => n + h.lines.length, 0);
+  // Fitted against real rendered heights: ~22px per row (20px line-height plus
+  // cell padding and border) and ~60px of file header and margin. A deferred
+  // file is just its header and the load button.
+  const estimate = file.deferred ? 104 : 60 + rows * 22;
+
   return `
-  <div class="file" id="diff-${file.id}" data-path="${path}">
+  <div class="file" id="diff-${file.id}" data-path="${path}"${file.deferred ? ' data-deferred="1"' : ''} style="contain-intrinsic-size:auto ${estimate}px">
     <div class="file-header" data-file-id="${file.id}">
       <button class="collapse-btn" aria-label="Toggle diff" aria-expanded="true">
         <svg class="chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
@@ -355,6 +376,41 @@ function renderTreeNode(node, depth) {
 
 export function renderFileTree(diff) {
   return renderTreeNode(buildTree(diff.files), 0);
+}
+
+// How much of a diff is rendered into the page at once.
+//
+// These are the numbers that decide whether opening a review is instant or
+// locks the machine up: the markup is ~600 bytes per code line, so an
+// unbounded diff of a few tens of thousands of lines becomes tens of megabytes
+// of HTML and millions of DOM nodes. Everything past the budget still appears,
+// with its header and its counts -- it just loads its rows as it is scrolled
+// to. The budget can be this small precisely because loading is automatic:
+// what it really sets is how much arrives before the reader has done anything.
+export const RENDER_BUDGET_LINES = 1500;
+export const MAX_FILE_LINES = 800;
+
+/**
+ * Mark the files that will not be rendered inline. Called before highlighting,
+ * so the expensive work is skipped for anything the page is not going to show.
+ */
+export function applyRenderBudget(diff, { budget = RENDER_BUDGET_LINES, maxFile = MAX_FILE_LINES } = {}) {
+  let used = 0;
+  let deferred = 0;
+  for (const file of diff.files) {
+    const lines = file.isBinary ? 0 : file.hunks.reduce((n, h) => n + h.lines.length, 0);
+    // A single enormous file is deferred on its own account: one 40,000-line
+    // generated file should not cost every other file its place on the page.
+    const tooBig = lines > maxFile;
+    if (tooBig || used + lines > budget) {
+      file.deferred = true;
+      deferred += 1;
+      continue;
+    }
+    file.deferred = false;
+    used += lines;
+  }
+  return { renderedLines: used, deferredFiles: deferred };
 }
 
 export function renderDiff(diff, { view = 'split', rev = null } = {}) {

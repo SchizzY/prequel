@@ -2,10 +2,11 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { renderDiff, renderFileTree } from './render/renderer.js';
-import { highlightDiff, highlightLines } from './render/highlighter.js';
+import { renderDiff, renderFileTree, applyRenderBudget } from './render/renderer.js';
+import { highlightDiff, highlightLines, paletteCss } from './render/highlighter.js';
 import { annotateWordDiffs } from './render/wordDiff.js';
 import { getDiff, getBlobLines, listBranches, resolveHeadRev } from './git/gitService.js';
+import { buildFileDiff } from './render/diffView.js';
 import { parseDiff, inferLanguage } from './git/diffParser.js';
 import { sampleDiff } from './sampleDiff.js';
 import {
@@ -22,13 +23,11 @@ import { openDb } from './db/index.js';
 import { getPullByNumber, getRepo } from './model/pulls.js';
 import { mountApi } from './api/routes.js';
 import { mountPages } from './pages/routes.js';
-import { marked } from 'marked';
-
-marked.setOptions({ breaks: true });
+import { renderMarkdown } from './render/markdown.js';
 
 // Add rendered markdown (bodyHtml) for the client to display.
 function withHtml(c) {
-  return { ...c, bodyHtml: marked.parse(c.body || '') };
+  return { ...c, bodyHtml: renderMarkdown(c.body) };
 }
 
 // Best-effort: add ".prequel/" to the repo's local git exclude so exported
@@ -61,6 +60,89 @@ export function createServer({ repoRoot = null, defaultBase = null, dbPath } = {
 
   app.set('view engine', 'ejs');
   app.set('views', path.join(projectRoot, 'views'));
+
+  // Binding to loopback keeps other machines out; it does nothing about the
+  // browser already running on this one. Any page the user visits can reach
+  // http://127.0.0.1:<port>/, and this server spawns git, opens OS dialogs and
+  // knows every repo the user has added -- so requests have to be shown to
+  // come from prequel's own pages rather than merely to arrive here.
+  //
+  //   Host      a name that resolves to 127.0.0.1 but is not it defeats the
+  //             loopback bind entirely (DNS rebinding), so the header is
+  //             pinned to the addresses the server actually answers on.
+  //   Origin    a cross-origin write is refused outright.
+  //   Sec-Fetch a subresource, form post or framed load from another site is
+  //             refused; the user clicking a link to here is not.
+  //
+  // Every spelling of loopback is accepted, since a person may well have typed
+  // one: 127.0.0.1, the short forms git and curl take, IPv6, and the
+  // IPv4-mapped form. Anything else is either a rebinding attempt or a
+  // deployment this tool does not support.
+  const LOOPBACK_HOST =
+    /^(localhost|127(\.\d{1,3}){1,3}|\[?::1\]?|\[?::ffff:127(\.\d{1,3}){1,3}\]?)(:\d+)?$/i;
+
+  app.use((req, res, next) => {
+    // Set before any early return, so a refused request carries them too.
+    res.setHeader(
+      'content-security-policy',
+      [
+        "default-src 'self'",
+        "img-src 'self' data:",
+        "style-src 'self' 'unsafe-inline'",
+        "script-src 'self'",
+        "connect-src 'self'",
+        "frame-ancestors 'none'",
+        "base-uri 'none'",
+        "form-action 'self'",
+        "object-src 'none'",
+      ].join('; ')
+    );
+    res.setHeader('x-frame-options', 'DENY');
+    res.setHeader('x-content-type-options', 'nosniff');
+    res.setHeader('referrer-policy', 'no-referrer');
+
+    // Fail closed: a request with no Host at all is not one a browser sends.
+    const host = req.headers.host || '';
+    if (!LOOPBACK_HOST.test(host)) {
+      return res.status(403).json({ error: 'host not allowed' });
+    }
+
+    const site = req.get('sec-fetch-site');
+    const dest = req.get('sec-fetch-dest');
+    // A cross-site request is allowed only when it is the user actually
+    // navigating here -- following a link, in the top-level page. An iframe
+    // load is also `mode: navigate`, so the destination is what separates
+    // "someone clicked a link" from "a hidden frame on another site loaded
+    // this URL", which matters because these GETs run git and re-anchor.
+    if (site === 'cross-site' && dest !== 'document') {
+      return res.status(403).json({ error: 'cross-site request refused' });
+    }
+
+    const writes = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+    if (writes) {
+      // Nothing legitimately writes here from another site -- the exemption
+      // above is for a person following a link, which is a GET. Refusing the
+      // whole class means Origin is not the only thing standing in the way of
+      // a cross-site form post.
+      if (site === 'cross-site') {
+        return res.status(403).json({ error: 'cross-site write refused' });
+      }
+      const origin = req.get('origin');
+      if (origin) {
+        let originHost = null;
+        try {
+          originHost = new URL(origin).host;
+        } catch {
+          /* unparseable Origin is not one of ours */
+        }
+        if (!originHost || originHost !== host) {
+          return res.status(403).json({ error: 'cross-origin write refused' });
+        }
+      }
+    }
+
+    next();
+  });
 
   app.use(express.json({ limit: '1mb' }));
   app.use('/static', express.static(path.join(projectRoot, 'public')));
@@ -102,6 +184,9 @@ export function createServer({ repoRoot = null, defaultBase = null, dbPath } = {
       base = sampleDiff.base;
     }
 
+    // Same budget as the PR pages: decide what is rendered before paying to
+    // highlight it. Everything else loads on request.
+    applyRenderBudget(diff);
     annotateWordDiffs(diff); // intra-line changed ranges (before highlighting)
     await highlightDiff(diff); // attaches per-line highlighted HTML in place
     // Which revision the "new" side comes from, for context expansion:
@@ -125,6 +210,7 @@ export function createServer({ repoRoot = null, defaultBase = null, dbPath } = {
       filesHtml,
       treeHtml,
       summary,
+      paletteCss: paletteCss(),
       commentsEnabled: Boolean(repoRoot),
     });
   });
@@ -161,7 +247,41 @@ export function createServer({ repoRoot = null, defaultBase = null, dbPath } = {
       const rev = req.query.rev && req.query.rev !== 'WORKTREE' ? source.committed : 'WORKTREE';
       const { lines, from, eof } = await getBlobLines(source.root, { rev, path: filePath, start, end });
       const html = await highlightLines(lines, inferLanguage(filePath));
-      res.json({ from, eof, lines, html });
+      // Expanded context can use a token colour the page was not rendered
+      // with, so the palette rides along and the client tops up its stylesheet.
+      res.json({ from, eof, lines, html, css: paletteCss() });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // One deferred file's rows. The page renders up to a budget and leaves the
+  // rest as headers; this is what fills one in when someone asks for it.
+  app.get('/api/file-diff', async (req, res) => {
+    if (!repoRoot) return res.status(400).json({ error: 'no repo' });
+    const filePath = String(req.query.path || '');
+    if (!filePath) return res.status(400).json({ error: 'bad params' });
+    const view = req.query.view === 'unified' ? 'unified' : 'split';
+    const diffMode = DIFF_MODES.includes(req.query.diff) ? req.query.diff : 'working';
+    try {
+      // A PR names the repo and branch its diff came from; without one this is
+      // the standalone page, which is always about the launch repo.
+      const number = Number(req.query.pr);
+      const db = app.locals.db;
+      let root = repoRoot;
+      let head = null;
+      let base = req.query.base ? String(req.query.base) : defaultBase;
+      if (db && Number.isInteger(number)) {
+        const pull = getPullByNumber(db, number);
+        if (pull) {
+          root = getRepo(db, pull.repo_id)?.root_path || repoRoot;
+          head = pull.head_ref;
+          base = req.query.base ? String(req.query.base) : pull.base_ref || defaultBase;
+        }
+      }
+      const built = await buildFileDiff(root, { base, diffMode, view, head, path: filePath });
+      if (!built) return res.status(404).json({ error: 'file not in this diff' });
+      res.json(built);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

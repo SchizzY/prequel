@@ -5,8 +5,11 @@
 
 import { newId, plain, plainAll, tx } from '../db/index.js';
 
-// @handle, not preceded by a word character so emails do not match.
-const MENTION_RE = /(?<![\w@])@([a-z0-9][a-z0-9._-]*)/gi;
+// @handle, not preceded by a word character so emails do not match. `.` and
+// `-` are legal inside a handle but not at the end of one, so that the common
+// "over to you @claude." reads as a mention of `claude` rather than of
+// `claude.`, which matches no participant and delivers nothing.
+const MENTION_RE = /(?<![\w@])@([a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)/gi;
 
 function recordMentions(db, commentId, body) {
   const handles = [...new Set([...body.matchAll(MENTION_RE)].map((m) => m[1].toLowerCase()))];

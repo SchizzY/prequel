@@ -2,9 +2,11 @@
 // no native module to compile — important on Windows.
 //
 // WAL + busy_timeout is what makes concurrent reviewers safe: several agents
-// read while one writes, and a writer that collides retries instead of
-// erroring. Every mutation below is a single statement, so there is no
-// read-modify-write window in which one agent's comment can overwrite another's.
+// read while one writes, and a writer that collides waits instead of erroring.
+// Turning WAL *on* is the exception -- see enableWal -- because SQLite does not
+// run the busy handler for that lock. Every mutation below is a single
+// statement, so there is no read-modify-write window in which one agent's
+// comment can overwrite another's.
 
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
@@ -21,15 +23,44 @@ export const DEFAULT_DB_PATH = path.join(os.homedir(), '.prequel', 'prequel.db')
 export const plain = (row) => (row ? { ...row } : row);
 export const plainAll = (rows) => rows.map(plain);
 
+// Switching a store into WAL takes a brief exclusive lock. Setting busy_timeout
+// first covers it in the measurements taken here, but only in those: whether
+// SQLite runs the busy handler for this particular lock upgrade is version and
+// timing dependent, and it was observed failing outright often enough on a
+// brand new store -- the multi-agent fan-out this store exists for -- to be
+// worth not relying on. With no catch anywhere above, that failure kills the
+// process before the server ever starts.
+//
+// So the pragma is retried explicitly, which costs nothing when it succeeds
+// first time (the common case), and if it still will not take we carry on: a
+// store left in the default rollback journal is slower under concurrent
+// readers but entirely correct, which beats refusing to start.
+function enableWal(db, attempts = 10) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      db.exec('PRAGMA journal_mode = WAL');
+      return true;
+    } catch {
+      // Another process is mid-switch. It only has to win once: whoever gets
+      // there first puts the file in WAL for everybody.
+      const until = Date.now() + 20;
+      while (Date.now() < until) {
+        /* brief spin; openDb is synchronous and runs once at startup */
+      }
+    }
+  }
+  return false;
+}
+
 export function openDb(dbPath = DEFAULT_DB_PATH) {
   // recursive:true still throws EPERM on a drive root (Windows), so only
   // create the parent when it is actually missing.
   const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const db = new DatabaseSync(dbPath);
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
   db.exec('PRAGMA busy_timeout = 5000');
+  enableWal(db);
+  db.exec('PRAGMA foreign_keys = ON');
   migrate(db);
   return db;
 }
@@ -60,6 +91,25 @@ const MIGRATIONS = [
       update.run(max, row.id);
     }
     db.exec('CREATE UNIQUE INDEX IF NOT EXISTS pull_number_unique ON pull_request (number)');
+  },
+
+  // 3: pull request numbers are issued from a counter, so that deleting a PR
+  // does not hand its number to the next one. The unique index only says no
+  // two live rows share a number; it does not say a number is never reused,
+  // and a reused /pr/7 is a worse failure than a gap in the sequence.
+  (db) => {
+    // One row, structurally: `id = 0` makes a second allocator row impossible
+    // rather than merely unlikely, so the unqualified UPDATE that bumps the
+    // counter can never touch more or fewer than the one row it means.
+    db.exec(
+      'CREATE TABLE IF NOT EXISTS pull_number (id INTEGER PRIMARY KEY CHECK (id = 0), next INTEGER NOT NULL)'
+    );
+    if (!db.prepare('SELECT next FROM pull_number').get()) {
+      const { max } = db
+        .prepare('SELECT COALESCE(MAX(number), 0) AS max FROM pull_request')
+        .get();
+      db.prepare('INSERT INTO pull_number (id, next) VALUES (0, ?)').run(max + 1);
+    }
   },
 ];
 

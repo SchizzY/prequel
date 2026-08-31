@@ -4,7 +4,7 @@
 // Both render from the same API-layer model the agents drive, so anything an
 // agent does over REST shows up here without a second code path.
 
-import { marked } from 'marked';
+import { renderMarkdown } from '../render/markdown.js';
 
 import { buildDiffView, diffOptions } from '../render/diffView.js';
 import {
@@ -25,10 +25,16 @@ import {
   getDiffStat,
   listCommits,
   listBranches,
+  resolveBaseRev,
   resolveHeadRev,
 } from '../git/gitService.js';
 
-const md = (text) => (text ? marked.parse(text) : '');
+const md = (text) => renderMarkdown(text);
+
+// JSON destined for a <script> block. A body containing the characters
+// "</script>" would otherwise close the tag and turn a review comment into
+// markup; escaping "<" keeps the payload valid JSON and inert as HTML.
+const scriptJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
 
 /**
  * Merge the timeline with the objects it references, so the template walks one
@@ -44,9 +50,20 @@ function buildFeed(db, pull) {
       switch (event.kind) {
         case 'review_submitted': {
           // The timeline records the verdict; the body lives on the review.
-          const review = [...reviewsById.values()].find(
-            (r) => r.participant_id === event.participant_id && r.state === 'submitted'
-          );
+          // The event names its review directly. Events written before it did
+          // fall back to the participant's latest round submitted no later than
+          // the event -- matching on participant alone always found their
+          // first review, so a second round rendered as a copy of the first.
+          const review =
+            reviewsById.get(event.payload?.reviewId) ??
+            [...reviewsById.values()]
+              .filter(
+                (r) =>
+                  r.participant_id === event.participant_id &&
+                  r.state === 'submitted' &&
+                  String(r.submitted_at ?? '') <= String(event.created_at ?? '')
+              )
+              .pop();
           if (review) {
             item.review = { ...review, bodyHtml: md(review.body) };
             item.threads = threads.listThreads(db, pull.id, { reviewId: review.id });
@@ -63,9 +80,27 @@ function buildFeed(db, pull) {
           }
           break;
         }
-        case 'thread_resolved':
+        case 'thread_resolved': {
+          item.thread = byThread.get(event.payload?.threadId) ?? null;
+          break;
+        }
         case 'thread_assigned': {
           item.thread = byThread.get(event.payload?.threadId) ?? null;
+          // Who it was handed to *at the time*. Taken from the event, so a
+          // later reassignment does not rewrite this notice, and clearing the
+          // assignee reads as the unassignment it is rather than as a handoff
+          // to nobody.
+          // Events written before the payload carried an assignee say nothing
+          // either way, so they keep reading as assignments and borrow the
+          // thread's current owner. Only an event that positively records "no
+          // assignee" is an unassignment.
+          const knowsAssignee = event.payload ? 'assigneeId' in event.payload : false;
+          const assigneeId = knowsAssignee
+            ? event.payload.assigneeId
+            : (item.thread?.assignee_id ?? null);
+          const assignee = assigneeId ? getParticipant(db, assigneeId) : null;
+          item.assigneeHandle = assignee?.handle ?? event.payload?.assignee ?? null;
+          item.unassigned = knowsAssignee && !event.payload.assigneeId;
           break;
         }
         case 'triaged': {
@@ -322,10 +357,22 @@ export function mountPages(app, db, { repoRoot, defaultBase = null } = {}) {
       // Opening the diff is exactly when stale line numbers would mislead, and
       // the blob-sha check makes an unchanged tree almost free, so re-anchor
       // here rather than making it something you have to remember to run.
+      // Threads are snapshotted against the working tree, so that is what they
+      // are compared with whenever it is the tree this PR is about. Note this
+      // does not follow ?diff=: which changes a reader asked to *see* must not
+      // decide what the store records, or flipping to Branch and back would
+      // bury every comment on uncommitted code and then dig it up again.
       await reanchorPull(db, {
         repoRoot: root,
         pullRequestId: pull.id,
-        rev: opts.diffMode === 'branch' || !headRev.checkedOut ? headRev.rev : 'WORKTREE',
+        rev: headRev.checkedOut ? 'WORKTREE' : headRev.rev,
+        // Old-side comments are about the diff's old side, which is the merge
+        // base -- not the base branch tip, which may have moved on since.
+        baseRev: await resolveBaseRev(root, pull.base_ref, headRev.rev),
+        // Only the tree the threads were written against may rewrite them. A
+        // PR about a branch this checkout is not standing on is still rendered,
+        // it just does not get to record what it saw.
+        persist: headRev.checkedOut,
       });
 
       const built = await buildDiffView(root, { ...opts, head: pull.head_ref });
@@ -336,6 +383,7 @@ export function mountPages(app, db, { repoRoot, defaultBase = null } = {}) {
         repoPath: root,
         isRepo: Boolean(root),
         commentsEnabled: Boolean(root),
+        me: currentHuman(db, { name: await gitName }),
         ...chrome(db, pull, 'files', {
           commitCount: (await commitsFor(pull)).length,
           // This page has the diff in hand; no need to ask git twice.
@@ -348,10 +396,12 @@ export function mountPages(app, db, { repoRoot, defaultBase = null } = {}) {
           additions: built.summary.additions,
           deletions: built.summary.deletions,
         },
-        threads: threads.listThreads(db, pull.id, { anchored: true }).map((t) => ({
-          ...t,
-          comments: t.comments.map((c) => ({ ...c, bodyHtml: md(c.body) })),
-        })),
+        threadsJson: scriptJson(
+          threads.listThreads(db, pull.id, { anchored: true }).map((t) => ({
+            ...t,
+            comments: t.comments.map((c) => ({ ...c, bodyHtml: md(c.body) })),
+          }))
+        ),
       });
     } catch (err) {
       next(err);

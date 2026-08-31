@@ -8,10 +8,13 @@
   data-diff="<%= diffMode %>"
   data-branch="<%= pull.head_ref %>"
   data-pr="<%= pull.number %>"
+  data-pull-id="<%= pull.id %>"
+  data-me="<%= me.handle %>"
   data-comments-enabled="<%= commentsEnabled ? '1' : '0' %>"
 >
 <head>
   <%- include('../partials/head', { title: 'Files changed · ' + pull.title }) %>
+  <style id="tok-palette"><%- typeof paletteCss === 'string' ? paletteCss : '' %></style>
 </head>
 <body>
   <%- include('../partials/pr-header') %>
@@ -67,6 +70,11 @@
   </div>
 
   <div id="toast" class="toast" hidden></div>
+  <%# The threads this PR's findings live on, already anchored and rendered.
+      Seeding them into the page rather than refetching means the diff and its
+      comments arrive together, and the bodies come through the same markdown
+      sanitiser the Conversation tab uses. %>
+  <script id="pr-threads" type="application/json"><%- threadsJson %></script>
   <script src="/static/js/base-picker.js"></script>
   <script src="/static/js/review.js"></script>
   <script src="/static/js/comments.js"></script>

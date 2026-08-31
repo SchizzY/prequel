@@ -72,7 +72,7 @@
                     <% item.threads.forEach(function (t) { %>
                       <li class="finding<%= t.status === 'resolved' ? ' is-resolved' : '' %><%= t.anchor_state === 'lost' ? ' is-lost' : '' %>">
                         <% if (t.severity) { %><span class="sev sev-<%= t.severity %>"><%= t.severity %></span><% } %>
-                        <a class="finding-loc" href="/pr/<%= pull.number %>/files#<%= t.file_path %>">
+                        <a class="finding-loc" href="/pr/<%= pull.number %>/files?thread=<%= encodeURIComponent(t.id) %>">
                           <%= t.file_path %><% if (t.start_line) { %>:<%= t.start_line %><% } %>
                         </a>
                         <%
@@ -120,7 +120,18 @@
                 <%- include('../partials/avatar', { handle: item.handle, color: item.color, kind: item.participant_kind }) %>
                 <span class="tl-author"><%= item.handle %></span>
                 resolved a thread on
-                <a href="/pr/<%= pull.number %>/files"><%= item.thread.file_path || 'this pull request' %></a>
+                <a href="/pr/<%= pull.number %>/files?thread=<%= encodeURIComponent(item.thread.id) %>"><%= item.thread.file_path || 'this pull request' %></a>
+                <time class="tl-time" datetime="<%= item.created_at %>"><%= item.created_at %></time>
+              </div>
+            <% } %>
+
+            <% if (item.kind === 'thread_assigned' && item.thread) { %>
+              <div class="tl-note">
+                <%- include('../partials/avatar', { handle: item.handle, color: item.color, kind: item.participant_kind }) %>
+                <span class="tl-author"><%= item.handle || 'someone' %></span>
+                <%= item.unassigned ? 'unassigned a finding on' : 'assigned a finding on' %>
+                <a href="/pr/<%= pull.number %>/files?thread=<%= encodeURIComponent(item.thread.id) %>"><%= item.thread.file_path || 'this pull request' %></a>
+                <% if (item.assigneeHandle) { %>to <strong><%= item.assigneeHandle %></strong><% } %>
                 <time class="tl-time" datetime="<%= item.created_at %>"><%= item.created_at %></time>
               </div>
             <% } %>

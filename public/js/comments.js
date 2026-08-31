@@ -6,6 +6,14 @@
   const root = document.documentElement;
   if (root.dataset.commentsEnabled !== '1') return;
   const branch = root.dataset.branch || '';
+  // On a PR page the review lives in the SQLite thread store, which is scoped
+  // to that pull request and therefore to its repo. The legacy /api/comments
+  // store is keyed only by the directory prequel was launched in and filtered
+  // by branch name, so using it here would file repo B's comments into repo
+  // A's store and then show them on every other PR whose branch shares a name.
+  const prNumber = root.dataset.pr || '';
+  const prId = root.dataset.pullId || '';
+  const meHandle = root.dataset.me || '';
 
   const exportBtn = document.getElementById('export-btn');
   const clearBtn = document.getElementById('clear-btn');
@@ -20,8 +28,14 @@
   const jsonHeaders = () => ({ 'content-type': 'application/json', 'x-prequel-client': CLIENT_ID });
   const clientHeaders = () => ({ 'x-prequel-client': CLIENT_ID });
 
+  // Quotes included: some of these values are interpolated into attributes.
   function escapeHtml(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   // --- subnav buttons ----------------------------------------------------
@@ -58,6 +72,142 @@
     toastTimer = setTimeout(() => (el.hidden = true), 6000);
   }
 
+  // --- where comments live ------------------------------------------------
+  // Two stores, one UI. Everything below this point -- the gutter affordance,
+  // range dragging, thread markup, live updates -- is the same either way; only
+  // the four calls that read and write are different.
+
+  // A thread carries its whole conversation; the cards want one flat list, with
+  // the root standing in for the thread so Resolve and Reply address it.
+  function flattenThread(t) {
+    const authorOf = (c) => ({
+      // "you" means the person reading, not merely a human: with several
+      // reviewers a second person's card was being styled as the reader's own.
+      author: c.handle && c.handle === meHandle ? 'you' : c.kind === 'human' ? 'other' : 'claude',
+      authorLabel: c.display_name || c.handle || 'unknown',
+    });
+    const [head, ...rest] = t.comments || [];
+    if (!head) return [];
+    const rootRecord = {
+      id: t.id, // the thread's id: Resolve and Reply act on the thread
+      parentId: null,
+      filePath: t.file_path,
+      side: t.side || 'new',
+      startLine: t.start_line,
+      endLine: t.end_line ?? t.start_line,
+      status: t.status,
+      severity: t.severity,
+      anchorState: t.anchor_state,
+      body: head.body,
+      bodyHtml: head.bodyHtml,
+      createdAt: head.created_at,
+      ...authorOf(head),
+    };
+    return [rootRecord].concat(
+      rest.map((c) => ({
+        id: c.id,
+        parentId: t.id,
+        body: c.body,
+        bodyHtml: c.bodyHtml,
+        createdAt: c.created_at,
+        ...authorOf(c),
+      }))
+    );
+  }
+
+  const legacyStore = {
+    canDelete: true,
+    async load() {
+      const res = await fetch(`/api/comments?branch=${encodeURIComponent(branch)}`);
+      return (await res.json()).comments;
+    },
+    async create(payload) {
+      const res = await fetch('/api/comments', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ ...payload, branch }),
+      });
+      return (await res.json()).comment;
+    },
+    async reply(rootId, body) {
+      const res = await fetch('/api/comments', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ parentId: rootId, body }),
+      });
+      return (await res.json()).comment;
+    },
+    async setStatus(id, status) {
+      const res = await fetch(`/api/comments/${id}`, {
+        method: 'PATCH',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ status }),
+      });
+      return (await res.json()).comment;
+    },
+    async remove(id) {
+      await fetch(`/api/comments/${id}`, { method: 'DELETE', headers: clientHeaders() });
+    },
+  };
+
+  let seedUsed = false;
+  const threadStore = {
+    // The thread API has no delete: a finding is resolved, not erased, so that
+    // the record of what was raised survives the round it was raised in.
+    canDelete: false,
+    async load() {
+      // The server already rendered these, markdown and all, into the page.
+      // Reading them from there rather than refetching keeps the first paint
+      // free and means the bodies arrive sanitised.
+      const seed = seedUsed ? null : document.getElementById('pr-threads');
+      seedUsed = true;
+      let list = [];
+      if (seed) {
+        try {
+          list = JSON.parse(seed.textContent || '[]');
+        } catch {
+          list = [];
+        }
+      } else {
+        const res = await fetch(`/api/pulls/${prNumber}/threads?anchored=1`);
+        list = (await res.json()).threads;
+      }
+      return list.flatMap(flattenThread);
+    },
+    async create(payload) {
+      const res = await fetch(`/api/pulls/${prNumber}/threads`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ ...payload, handle: meHandle }),
+      });
+      const { thread } = await res.json();
+      return flattenThread(thread)[0];
+    },
+    async reply(rootId, body) {
+      const res = await fetch(`/api/threads/${rootId}/comments`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ body, handle: meHandle }),
+      });
+      const { thread } = await res.json();
+      return flattenThread(thread).pop();
+    },
+    async setStatus(id, status) {
+      const res = await fetch(`/api/threads/${id}`, {
+        method: 'PATCH',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ status, handle: meHandle }),
+      });
+      const { thread } = await res.json();
+      return flattenThread(thread)[0];
+    },
+    async remove() {
+      /* not offered */
+    },
+  };
+
+  const store = prNumber ? threadStore : legacyStore;
+
   // --- shared thread markup ---------------------------------------------
   // A thread is one root comment plus its replies, rendered as stacked cards
   // inside a single container — the shape GitHub uses.
@@ -70,25 +220,44 @@
   }
 
   function commentCardHtml(c, { isRoot }) {
-    const author = c.author === 'claude' ? 'claude' : 'you';
+    // Three cases, not two: you, another person, or an agent. Collapsing the
+    // middle one into "you" is what styled a second reviewer's card as mine.
+    const author = c.author === 'claude' || c.author === 'other' ? c.author : 'you';
+    // Several agents review at once, so a card says which one wrote it rather
+    // than the old two-way "You or Claude".
+    const label = c.authorLabel || (author === 'claude' ? 'Claude' : 'You');
     const range =
       isRoot && c.side !== 'file' && c.endLine > c.startLine
         ? `<span class="comment-lines">Lines ${c.startLine}–${c.endLine}</span>`
         : '';
     const resolved = isRoot && c.status === 'resolved';
+    // What kind of work this is, and whether the line it points at can still
+    // be trusted -- the whole reason anchor state is tracked.
+    const severity =
+      isRoot && c.severity
+        ? `<span class="sev sev-${escapeHtml(c.severity)}">${escapeHtml(c.severity)}</span>`
+        : '';
+    const drift =
+      isRoot && c.anchorState && c.anchorState !== 'current'
+        ? `<span class="anchor-drift anchor-${escapeHtml(c.anchorState)}" title="${c.anchorState === 'lost' ? 'The code this was written about is gone' : 'The code this was written about has changed'}">${escapeHtml(c.anchorState)}</span>`
+        : '';
     const tools = isRoot
       ? `<button class="comment-resolve">${resolved ? 'Reopen' : 'Resolve'}</button>` +
         `<button class="comment-reply-btn">Reply</button>`
       : '';
+    const del = store.canDelete
+      ? '<button class="comment-delete" title="Delete comment">Delete</button>'
+      : '';
     return (
       `<div class="comment" data-comment-id="${c.id}" data-author="${author}">` +
       `<div class="comment-header">` +
-      `<span class="comment-author comment-author-${author}">${author === 'claude' ? 'Claude' : 'You'}</span>` +
+      `<span class="comment-author comment-author-${author}">${escapeHtml(label)}</span>` +
       range +
+      severity +
+      drift +
       `<span class="comment-time">${escapeHtml(timeLabel(c))}</span>` +
       (resolved ? '<span class="comment-resolved-pill">Resolved</span>' : '') +
-      `<span class="comment-tools">${tools}` +
-      `<button class="comment-delete" title="Delete comment">Delete</button></span>` +
+      `<span class="comment-tools">${tools}${del}</span>` +
       `</div>` +
       `<div class="comment-body markdown-body">${c.bodyHtml || escapeHtml(c.body || '')}</div>` +
       `</div>`
@@ -259,20 +428,14 @@
     if (!body) return;
     form.querySelectorAll('button').forEach((b) => (b.disabled = true));
     try {
-      const res = await fetch('/api/comments', {
-        method: 'POST',
-        headers: jsonHeaders(),
-        body: JSON.stringify({
-          filePath: form.dataset.filePath,
-          side: form.dataset.side,
-          startLine: Number(form.dataset.startLine),
-          endLine: Number(form.dataset.endLine),
-          body,
-          branch,
-          lineSnapshot: JSON.parse(form.dataset.snapshot || '[]'),
-        }),
+      const comment = await store.create({
+        filePath: form.dataset.filePath,
+        side: form.dataset.side,
+        startLine: Number(form.dataset.startLine),
+        endLine: Number(form.dataset.endLine),
+        body,
+        lineSnapshot: JSON.parse(form.dataset.snapshot || '[]'),
       });
-      const { comment } = await res.json();
       if (comment.side === 'file') {
         container.outerHTML = fileCommentHtml(comment);
       } else {
@@ -305,7 +468,7 @@
   async function removeComment(card) {
     const id = card.dataset.commentId;
     try {
-      await fetch(`/api/comments/${id}`, { method: 'DELETE', headers: clientHeaders() });
+      await store.remove(id);
       dropComment(id);
     } catch {
       /* leave it in place on failure */
@@ -314,13 +477,7 @@
 
   async function setStatus(id, status) {
     try {
-      const res = await fetch(`/api/comments/${id}`, {
-        method: 'PATCH',
-        headers: jsonHeaders(),
-        body: JSON.stringify({ status }),
-      });
-      const { comment } = await res.json();
-      applyStatus(comment);
+      applyStatus(await store.setStatus(id, status));
     } catch {
       /* leave the UI as-is on failure */
     }
@@ -342,12 +499,7 @@
     if (!body || !thread) return;
     form.querySelectorAll('button').forEach((b) => (b.disabled = true));
     try {
-      const res = await fetch('/api/comments', {
-        method: 'POST',
-        headers: jsonHeaders(),
-        body: JSON.stringify({ parentId: thread.dataset.rootId, body }),
-      });
-      const { comment } = await res.json();
+      const comment = await store.reply(thread.dataset.rootId, body);
       form.closest('.comment-reply-compose').remove();
       thread.insertAdjacentHTML('beforeend', commentCardHtml(comment, { isRoot: false }));
     } catch {
@@ -365,10 +517,29 @@
     }
     // ranges anchor after the end line (GitHub's convention)
     const cell = findAnchorCell(c.filePath, c.side, c.endLine || c.startLine);
-    if (!cell) return; // line not present in the current view/mode
+    // The line is not on screen: collapsed context, a diff mode that does not
+    // show it, or an anchor that drifted outside the rendered hunks. Dropping
+    // the thread silently is the one thing not to do -- a finding invisible on
+    // the page built for it is the bug this store was wired up to fix -- so it
+    // docks to the file instead, saying which line it is about.
+    if (!cell) return renderUnplaced(c, replies);
     const row = cell.closest('tr');
     const isSplit = isSplitTable(cell.closest('table'));
     insertionPointAfter(row).insertAdjacentHTML('afterend', commentRowHtml(c, isSplit, replies));
+  }
+
+  // A thread that has no line to sit on still belongs to its file.
+  function renderUnplaced(c, replies) {
+    const file = document.querySelector(`.file[data-path="${CSS.escape(c.filePath)}"]`);
+    if (!file) return; // the file itself is not in this diff
+    const where = c.startLine ? `line ${c.startLine}` : 'this file';
+    const note = `<div class="unplaced-note">Not shown in this view — written about ${escapeHtml(String(where))}</div>`;
+    file
+      .querySelector('.file-comments')
+      .insertAdjacentHTML(
+        'beforeend',
+        `<div class="file-comment comment-unplaced" data-root-id="${c.id}">${note}${threadInner(c, replies)}</div>`
+      );
   }
 
   // Replies arrive as flat records; bucket them under the root they answer.
@@ -389,8 +560,7 @@
   async function loadComments() {
     let comments = [];
     try {
-      const res = await fetch(`/api/comments?branch=${encodeURIComponent(branch)}`);
-      ({ comments } = await res.json());
+      comments = (await store.load()) || [];
     } catch {
       return;
     }
@@ -398,6 +568,20 @@
     commentCount = threads.length; // the button counts asks, not messages
     updateButtons();
     threads.forEach(({ root, replies }) => renderComment(root, replies));
+    focusRequestedThread();
+  }
+
+  // A finding on the Conversation tab links here as ?thread=<id>. The diff's
+  // own anchors are hashes of file paths, so the thread is the only stable
+  // thing to aim at -- and it is only in the page once the threads are drawn.
+  function focusRequestedThread() {
+    const wanted = new URLSearchParams(location.search).get('thread');
+    if (!wanted) return;
+    document.querySelectorAll('.is-focused').forEach((e) => e.classList.remove('is-focused'));
+    const el = document.querySelector(`[data-root-id="${CSS.escape(wanted)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('is-focused');
   }
 
   async function runExport() {
@@ -593,10 +777,13 @@
   // --- live updates -------------------------------------------------------
   // Apply changes made outside this tab (Claude working the review via the
   // API, or a second browser window) without a reload.
+  let repaintTimer = null;
+
   function applyRemote(msg) {
     if (msg.origin === CLIENT_ID) return; // our own change, already applied
     switch (msg.type) {
       case 'comment.created': {
+        if (prNumber) return; // legacy store; this page reads the thread store
         const c = msg.comment;
         if (c.branch && branch && c.branch !== branch) return;
         if (c.parentId) {
@@ -617,15 +804,54 @@
         return;
       }
       case 'comment.updated':
+        if (prNumber) return;
         applyStatus(msg.comment);
         return;
       case 'comment.deleted':
+        if (prNumber) return;
         dropComment(msg.id);
         return;
       case 'comments.reset':
+        if (prNumber) return;
         removeAllCommentEls();
         loadComments();
         return;
+      // The thread store's equivalents. A thread arrives whole, so an update is
+      // a repaint of the thread rather than a patch to one card.
+      case 'thread.reanchored': {
+        // One re-anchor pass emits one frame per thread that moved, and
+        // loadComments appends rather than replaces -- so repainting per frame
+        // rendered the whole page once per moved thread. Clear first, and
+        // coalesce the burst into a single repaint.
+        if (!prNumber || !msg.change) return;
+        if (!document.querySelector(`[data-root-id="${CSS.escape(msg.change.threadId)}"]`)) return;
+        clearTimeout(repaintTimer);
+        repaintTimer = setTimeout(() => {
+          removeAllCommentEls();
+          loadComments();
+        }, 50);
+        return;
+      }
+      case 'thread.created':
+      case 'thread.updated': {
+        if (!prNumber) return;
+        const t = msg.thread;
+        if (!t || !t.file_path) return; // conversation-level; not this page
+        // Another PR's thread, possibly in another repo entirely. The branch
+        // name would not tell us apart -- two repos both have a `main`.
+        if (prId && t.pull_request_id && t.pull_request_id !== prId) return;
+        const [rootRecord, ...replies] = flattenThread(t);
+        if (!rootRecord) return;
+        const existing = document.querySelector(`[data-root-id="${CSS.escape(t.id)}"]`);
+        if (existing) {
+          existing.remove(); // repainted below, in whatever place it now anchors to
+        } else {
+          commentCount++;
+          updateButtons();
+        }
+        renderComment(rootRecord, replies);
+        return;
+      }
     }
   }
 

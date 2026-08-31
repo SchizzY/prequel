@@ -27,9 +27,19 @@ export function createPull(db, data) {
     // requests from every repo you have added, so #7 has to name exactly one
     // of them. Safe under concurrency because tx() holds the write lock
     // across the read.
-    const { next } = db
-      .prepare('SELECT COALESCE(MAX(number), 0) + 1 AS next FROM pull_request')
+    //
+    // Issued from a counter rather than MAX(number)+1, because deleting a PR
+    // is a real delete: with MAX the next one silently reuses the number that
+    // just came free, and every bookmark, exported review file and agent-held
+    // reference to /pr/N quietly starts resolving to a different pull request.
+    // MAX is still taken as a floor, so a store whose counter is missing or
+    // behind cannot collide with a live row.
+    const seq = db.prepare('SELECT next FROM pull_number').get();
+    const { max } = db
+      .prepare('SELECT COALESCE(MAX(number), 0) AS max FROM pull_request')
       .get();
+    const next = Math.max(seq?.next ?? 1, max + 1);
+    db.prepare('UPDATE pull_number SET next = ?').run(next + 1);
     const id = newId();
     db.prepare(
       `INSERT INTO pull_request

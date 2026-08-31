@@ -96,6 +96,12 @@ async function expandContext(btn) {
         (pr ? `&pr=${encodeURIComponent(pr)}` : '')
     );
     const data = await res.json();
+    // Expanded context can use a token colour this page was not rendered with.
+    // The server sends the whole (tiny) palette; replacing it is idempotent.
+    if (data.css) {
+      const sheet = document.getElementById('tok-palette');
+      if (sheet && sheet.textContent.length < data.css.length) sheet.textContent = data.css;
+    }
     const lines = data.lines || [];
     let frag = '';
     lines.forEach((content, i) => {
@@ -303,3 +309,110 @@ document.querySelectorAll('.viewed-checkbox').forEach((cb) => {
     markTreeViewed(id, cb.checked);
   });
 });
+
+
+// --- deferred files ------------------------------------------------------
+// A large diff renders up to a budget and leaves the rest as headers, so the
+// page is not a few hundred thousand table cells the moment it opens. Those
+// files then load as they come into view.
+//
+// This is virtualization at file granularity rather than row granularity, and
+// that is a deliberate choice: rows are what a reader searches. Text that is
+// not in the DOM cannot be found by Ctrl-F or selected across, and a review
+// tool where find-in-page silently misses half the diff is worse than a slow
+// one. A file is a unit the reader already thinks of as a unit -- it has a
+// header, it collapses -- so loading one is legible in a way a window of rows
+// scrolling in and out never is.
+async function loadDeferredFile(fileEl) {
+  const holder = fileEl.querySelector('.diff-deferred');
+  if (!holder || fileEl.dataset.loading === '1') return;
+  const btn = holder.querySelector('.load-file-diff');
+  const root = document.documentElement;
+  fileEl.dataset.loading = '1';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Loading…';
+  }
+  try {
+    const params = new URLSearchParams({
+      path: fileEl.dataset.path,
+      view: root.dataset.view === 'unified' ? 'unified' : 'split',
+      diff: root.dataset.diff || 'working',
+    });
+    if (root.dataset.pr) params.set('pr', root.dataset.pr);
+    const base = new URLSearchParams(location.search).get('base');
+    if (base) params.set('base', base);
+    const res = await fetch(`/api/file-diff?${params}`);
+    if (!res.ok) throw new Error('failed');
+    const data = await res.json();
+    if (data.css) {
+      const sheet = document.getElementById('tok-palette');
+      if (sheet && sheet.textContent.length < data.css.length) sheet.textContent = data.css;
+    }
+    // The response is a whole .file element; take its body and drop it in, so
+    // the header, its counts and the comment affordances stay as they were.
+    const parsed = new DOMParser().parseFromString(data.html, 'text/html');
+    const table = parsed.querySelector('.diff-table, .binary-notice');
+    if (!table) throw new Error('no rows');
+    holder.replaceWith(table);
+    fileEl.removeAttribute('data-deferred');
+    document.dispatchEvent(new CustomEvent('prequel:file-loaded', { detail: { path: fileEl.dataset.path } }));
+  } catch {
+    fileEl.dataset.loading = '';
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Load diff';
+    }
+    const note = holder.querySelector('.deferred-note');
+    if (note) note.textContent = 'Could not load this diff.';
+  }
+}
+
+// Clicking is still honoured, for a file the observer has not reached yet and
+// for browsers without IntersectionObserver.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.load-file-diff');
+  if (!btn) return;
+  e.preventDefault();
+  const fileEl = btn.closest('.file');
+  if (fileEl) loadDeferredFile(fileEl);
+});
+
+// Load files as they approach the viewport, one at a time. Serialised because
+// each one is a git call plus syntax highlighting on a single-threaded server:
+// firing ten at once turns scrolling into a stall, which is the thing being
+// fixed here.
+(() => {
+  if (!('IntersectionObserver' in window)) return;
+  const queue = [];
+  let running = false;
+
+  async function drain() {
+    if (running) return;
+    running = true;
+    while (queue.length) {
+      const el = queue.shift();
+      if (el.isConnected && el.hasAttribute('data-deferred')) await loadDeferredFile(el);
+    }
+    running = false;
+  }
+
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        io.unobserve(entry.target);
+        queue.push(entry.target);
+      }
+      drain();
+    },
+    // A screenful of lead time, so a file is usually ready by the time it is
+    // scrolled to rather than popping in under the reader.
+    { rootMargin: '800px 0px' }
+  );
+
+  const observe = () =>
+    document.querySelectorAll('.file[data-deferred]').forEach((el) => io.observe(el));
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', observe);
+  else observe();
+})();

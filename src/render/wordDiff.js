@@ -81,7 +81,7 @@ export function computeWordDiff(oldStr, newStr) {
 // Attach `line.wordRanges` to paired deletion/addition lines within each hunk.
 export function annotateWordDiffs(diff) {
   for (const file of diff.files) {
-    if (file.isBinary) continue;
+    if (file.isBinary || file.deferred) continue; // not on the page; nothing to annotate
     for (const hunk of file.hunks) {
       const lines = hunk.lines;
       let i = 0;
